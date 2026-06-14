@@ -1,0 +1,1 @@
+"""PDF validation report generation."""
