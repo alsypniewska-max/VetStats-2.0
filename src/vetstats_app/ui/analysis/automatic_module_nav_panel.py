@@ -8,6 +8,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Analiza leczenia w grupach pacjentów",
     "Analiza wyników mikrobiologicznych",
     "Analiza oporności bakterii w czasie",
+    "Powiązanie rozpoznań z posiewem",
 ]
 
 

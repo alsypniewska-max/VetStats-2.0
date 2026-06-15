@@ -2,6 +2,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
 
 from vetstats_app.ui.analysis.automatic_module_nav_panel import AutomaticModuleNavPanel
+from vetstats_app.ui.analysis.diagnosis_culture_relationship_view import (
+    DiagnosisCultureRelationshipView,
+)
 from vetstats_app.ui.analysis.diagnosis_frequency_view import DiagnosisFrequencyView
 from vetstats_app.ui.analysis.microbiology_results_view import MicrobiologyResultsView
 from vetstats_app.ui.analysis.population_characteristics_view import (
@@ -26,6 +29,7 @@ class AutomaticAnalysisSection(QWidget):
         module_stack.addWidget(TreatmentGroupsView())
         module_stack.addWidget(MicrobiologyResultsView())
         module_stack.addWidget(ResistanceOverTimeView())
+        module_stack.addWidget(DiagnosisCultureRelationshipView())
 
         body = QHBoxLayout()
         body.addWidget(module_nav_panel)
