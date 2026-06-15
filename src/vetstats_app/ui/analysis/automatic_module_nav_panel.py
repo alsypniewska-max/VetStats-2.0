@@ -10,6 +10,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Analiza oporności bakterii w czasie",
     "Powiązanie rozpoznań z posiewem",
     "Powiązanie procedur z rozpoznaniami",
+    "Powiązanie topical_systemic z type_of_ulcer",
 ]
 
 
