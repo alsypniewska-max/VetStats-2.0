@@ -11,6 +11,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Powiązanie rozpoznań z posiewem",
     "Powiązanie procedur z rozpoznaniami",
     "Powiązanie topical_systemic z type_of_ulcer",
+    "Powiązania patient_ID między tabelami",
 ]
 
 
