@@ -10,6 +10,9 @@ from vetstats_app.ui.analysis.microbiology_results_view import MicrobiologyResul
 from vetstats_app.ui.analysis.population_characteristics_view import (
     PopulationCharacteristicsView,
 )
+from vetstats_app.ui.analysis.procedure_diagnosis_relationship_view import (
+    ProcedureDiagnosisRelationshipView,
+)
 from vetstats_app.ui.analysis.resistance_over_time_view import ResistanceOverTimeView
 from vetstats_app.ui.analysis.treatment_groups_view import TreatmentGroupsView
 
@@ -30,6 +33,7 @@ class AutomaticAnalysisSection(QWidget):
         module_stack.addWidget(MicrobiologyResultsView())
         module_stack.addWidget(ResistanceOverTimeView())
         module_stack.addWidget(DiagnosisCultureRelationshipView())
+        module_stack.addWidget(ProcedureDiagnosisRelationshipView())
 
         body = QHBoxLayout()
         body.addWidget(module_nav_panel)

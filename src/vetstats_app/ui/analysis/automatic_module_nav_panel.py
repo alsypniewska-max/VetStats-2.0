@@ -9,6 +9,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Analiza wyników mikrobiologicznych",
     "Analiza oporności bakterii w czasie",
     "Powiązanie rozpoznań z posiewem",
+    "Powiązanie procedur z rozpoznaniami",
 ]
 
 
