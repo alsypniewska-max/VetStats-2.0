@@ -119,10 +119,8 @@ class ResistanceOverTimeView(QWidget):
         result = ResistanceOverTimeService().analyze()
 
         generate_report_button = QPushButton("Generuj raport")
-        export_charts_button = QPushButton("Eksport wykresów")
         self._action_bar_widget = build_module_action_bar(
             generate_report_button,
-            export_charts_button,
         )
 
         content_widget = QWidget()
