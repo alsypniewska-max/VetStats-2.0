@@ -22,6 +22,7 @@ from vetstats_app.services.population_characteristics_service import (
     PopulationCharacteristicsService,
 )
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
+from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
@@ -93,10 +94,9 @@ class PopulationCharacteristicsView(QWidget):
             )
         )
 
-        interpretation_group = QGroupBox("Interpretacja")
-        interpretation_layout = QVBoxLayout(interpretation_group)
-        interpretation_layout.addWidget(QLabel(build_interpretation_summary(result)))
-        content_layout.addWidget(interpretation_group)
+        content_layout.addWidget(
+            build_interpretation_section(build_interpretation_summary(result))
+        )
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)

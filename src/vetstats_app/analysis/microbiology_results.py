@@ -5,6 +5,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from vetstats_app.analysis.report_models import ReportTableBlock
+
 from data_sterilizer.schemas.clinical import (
     DATE_APPOINTMENT_COLUMN,
     PATIENT_ID_COLUMN as CLINICAL_PATIENT_ID_COLUMN,
@@ -319,3 +321,51 @@ def build_interpretation_summary(result: MicrobiologyResultsResult) -> str:
         parts.append("Brak dodatnich izolacji bakteryjnych w dopasowanych wynikach.")
 
     return " ".join(parts)
+
+
+def build_descriptive_stats_block(
+    result: MicrobiologyResultsResult,
+) -> ReportTableBlock:
+    matching = result.matching
+    clinical_rows = matching.clinical_rows
+    matched_pairs = matching.matched_pairs
+    unmatched_rows = matching.unmatched_clinical_rows
+    matched_pct = (matched_pairs / clinical_rows * 100.0) if clinical_rows else 0.0
+    unmatched_pct = (unmatched_rows / clinical_rows * 100.0) if clinical_rows else 0.0
+
+    valid_observations = result.negative_count + result.included_isolates
+    bacteria_categories = len(result.bacteria_frequencies)
+
+    if result.bacteria_frequencies:
+        most_common = result.bacteria_frequencies[0]
+        most_common_bacteria = most_common.bacteria
+        most_common_count = str(most_common.count)
+        most_common_percentage = f"{most_common.percentage:.1f}"
+    else:
+        most_common_bacteria = "—"
+        most_common_count = "0"
+        most_common_percentage = "0.0"
+
+    return ReportTableBlock(
+        title="Statystyki opisowe",
+        columns=("Metryka", "Wartość"),
+        rows=(
+            ("Łączna liczba wierszy clinical (N)", str(clinical_rows)),
+            ("Dopasowane pary clinical–micro (n)", str(matched_pairs)),
+            ("Niedopasowane wiersze clinical (n)", str(unmatched_rows)),
+            ("Dopasowane (%)", f"{matched_pct:.1f}"),
+            ("Niedopasowane (%)", f"{unmatched_pct:.1f}"),
+            (
+                "Pacjenci z wieloma result_ID (n)",
+                str(matching.patients_with_multiple_results),
+            ),
+            ("Ważne obserwacje bakteryjne (n)", str(valid_observations)),
+            ("Dodatnie izolacje (n)", str(result.included_isolates)),
+            ("Wyniki negatywne (n)", str(result.negative_count)),
+            ("Wyniki negatywne (%)", f"{result.negative_percentage:.1f}"),
+            ("Liczba izolowanych bakterii (kategorie)", str(bacteria_categories)),
+            ("Najczęstsza bakteria", most_common_bacteria),
+            ("Liczba — najczęstsza bakteria", most_common_count),
+            ("Udział (%) — najczęstsza bakteria", most_common_percentage),
+        ),
+    )

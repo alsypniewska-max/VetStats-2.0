@@ -20,6 +20,9 @@ class ProcedureDiagnosisRelationshipService:
                 excluded_cases=0,
                 source_label="clinical",
                 categories=(),
+                multiple_procedure_rows=0,
+                included_ulcer_counts=(),
+                procedure_ulcer_pairs=(),
                 error_message=(
                     "Nie znaleziono pliku clinical.csv ani clinical_sterile.csv."
                 ),

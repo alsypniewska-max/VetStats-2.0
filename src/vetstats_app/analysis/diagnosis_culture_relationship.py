@@ -13,6 +13,7 @@ from data_sterilizer.schemas.clinical import (
 from data_sterilizer.schemas.micro import (
     BACTERIA_COLUMN,
     DATE_COLLECT_COLUMN,
+    NEGATIVE_BACTERIA_VALUE,
     PATIENT_ID_COLUMN as MICRO_PATIENT_ID_COLUMN,
     RESULT_ID_COLUMN,
     parse_micro_date,
@@ -23,8 +24,11 @@ from vetstats_app.analysis.diagnosis_frequency import (
     TYPE_OF_ULCER_COLUMN,
     normalize_ulcer_code,
 )
+from vetstats_app.analysis.report_models import ReportTableBlock
 
 UNKNOWN_VALUE = "xxx"
+NON_ULCER_TYPE_CODE = "x"
+NON_ULCER_DISPLAY_LABEL = "other (non ulcer)"
 
 
 @dataclass(frozen=True)
@@ -309,16 +313,141 @@ def build_interpretation_summary(result: DiagnosisCultureRelationshipResult) -> 
     largest = max(observed, key=lambda category: category.matched_cases)
     parts = [
         (
-            f"Największa grupa: {largest.label} ({largest.matched_cases} dopasowanych przypadków)."
+            f"Największa grupa: "
+            f"{format_category_output_label(largest.code, largest.label)} "
+            f"({largest.matched_cases} dopasowanych przypadków)."
         )
     ]
 
     for category in observed:
         if category.bacteria_rows:
             top_bacteria = category.bacteria_rows[0]
+            display_label = format_category_output_label(category.code, category.label)
             parts.append(
-                f"{category.label}: najczęściej {top_bacteria.bacteria} "
+                f"{display_label}: najczęściej {top_bacteria.bacteria} "
                 f"({top_bacteria.count})."
             )
 
     return " ".join(parts)
+
+
+def format_category_output_label(code: str, label: str) -> str:
+    if code == NON_ULCER_TYPE_CODE:
+        return NON_ULCER_DISPLAY_LABEL
+    return label
+
+
+def ulcer_relationship_categories(
+    categories: tuple[UlcerCategoryCultureSummary, ...],
+) -> tuple[UlcerCategoryCultureSummary, ...]:
+    """Ulcer categories included in relationship tables and charts.
+
+    ``type_of_ulcer == "x"`` denotes non-ulcer and is excluded here.
+    """
+    return tuple(
+        category for category in categories if category.code != NON_ULCER_TYPE_CODE
+    )
+
+
+def _aggregate_bacteria_totals(
+    result: DiagnosisCultureRelationshipResult,
+) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for category in result.categories:
+        for bacteria_row in category.bacteria_rows:
+            totals[bacteria_row.bacteria] = (
+                totals.get(bacteria_row.bacteria, 0) + bacteria_row.count
+            )
+    return totals
+
+
+def _total_bacterial_observations(result: DiagnosisCultureRelationshipResult) -> int:
+    return sum(
+        bacteria_row.count
+        for category in result.categories
+        for bacteria_row in category.bacteria_rows
+    )
+
+
+def build_descriptive_stats_block(
+    result: DiagnosisCultureRelationshipResult,
+) -> ReportTableBlock:
+    matching = result.matching
+    clinical_rows = matching.clinical_rows
+    matched_pairs = matching.matched_pairs
+    unmatched_rows = matching.unmatched_clinical_rows
+    matched_pct = (matched_pairs / clinical_rows * 100.0) if clinical_rows else 0.0
+
+    observed_categories = [
+        category for category in result.categories if category.matched_cases > 0
+    ]
+    categories_with_data = len(observed_categories)
+
+    if observed_categories:
+        largest = max(observed_categories, key=lambda category: category.matched_cases)
+        largest_label = largest.label
+        largest_count = str(largest.matched_cases)
+    else:
+        largest_label = "—"
+        largest_count = "0"
+
+    total_bacterial_observations = _total_bacterial_observations(result)
+    bacteria_totals = _aggregate_bacteria_totals(result)
+    negative_count = bacteria_totals.get(NEGATIVE_BACTERIA_VALUE, 0)
+    negative_pct = (
+        (negative_count / total_bacterial_observations * 100.0)
+        if total_bacterial_observations
+        else 0.0
+    )
+
+    if bacteria_totals:
+        most_common_bacteria, most_common_count = max(
+            bacteria_totals.items(),
+            key=lambda item: (item[1], item[0]),
+        )
+        most_common_bacteria_label = most_common_bacteria
+        most_common_bacteria_count = str(most_common_count)
+        if total_bacterial_observations:
+            most_common_bacteria_pct = (
+                f"{most_common_count / total_bacterial_observations * 100.0:.1f}"
+            )
+        else:
+            most_common_bacteria_pct = "0.0"
+    else:
+        most_common_bacteria_label = "—"
+        most_common_bacteria_count = "0"
+        most_common_bacteria_pct = "0.0"
+
+    return ReportTableBlock(
+        title="Statystyki opisowe",
+        columns=("Metryka", "Wartość"),
+        rows=(
+            ("Łączna liczba wierszy clinical (N)", str(clinical_rows)),
+            ("Dopasowane pary clinical–micro (n)", str(matched_pairs)),
+            ("Niedopasowane wiersze clinical (n)", str(unmatched_rows)),
+            (
+                "Wykluczone — nieprawidłowy kod wrzodu (n)",
+                str(matching.excluded_invalid_ulcer),
+            ),
+            ("Dopasowane (%)", f"{matched_pct:.1f}"),
+            (
+                "Pacjenci z wieloma result_ID (n)",
+                str(matching.patients_with_multiple_results),
+            ),
+            ("Kategorie wrzodu z danymi (n)", str(categories_with_data)),
+            ("Największa kategoria wrzodu", largest_label),
+            ("Liczba — największa kategoria", largest_count),
+            (
+                "Obserwacje bakteryjne (n)",
+                str(total_bacterial_observations),
+            ),
+            ("Wyniki negative (n)", str(negative_count)),
+            ("Wyniki negative (%)", f"{negative_pct:.1f}"),
+            ("Najczęstsza bakteria (ogółem)", most_common_bacteria_label),
+            ("Liczba — najczęstsza bakteria", most_common_bacteria_count),
+            (
+                "Udział (%) — najczęstsza bakteria",
+                most_common_bacteria_pct,
+            ),
+        ),
+    )

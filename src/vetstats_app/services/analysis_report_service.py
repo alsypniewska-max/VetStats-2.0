@@ -3,19 +3,24 @@ from __future__ import annotations
 from pathlib import Path
 
 from vetstats_app.analysis.chart_specs import (
+    build_diagnosis_culture_relationship_charts,
+    build_procedure_diagnosis_relationship_charts,
     build_diagnosis_frequency_charts,
     build_microbiology_results_charts,
     build_population_characteristics_charts,
+    build_resistance_over_time_charts,
     build_treatment_groups_charts,
 )
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
     DiagnosisFrequencyResult,
+    build_descriptive_stats_block as build_diagnosis_frequency_descriptive_stats_block,
     build_interpretation_summary as build_diagnosis_frequency_interpretation,
 )
 from vetstats_app.analysis.treatment_groups import (
     TreatmentCategoryRow,
     TreatmentGroupsResult,
+    build_descriptive_stats_block as build_treatment_groups_descriptive_stats_block,
     build_interpretation_summary as build_treatment_groups_interpretation,
     build_summary_details as build_treatment_groups_summary_details,
 )
@@ -26,17 +31,23 @@ from vetstats_app.analysis.patient_id_cross_table_summary import (
 )
 from vetstats_app.analysis.diagnosis_culture_relationship import (
     DiagnosisCultureRelationshipResult,
+    build_descriptive_stats_block as build_diagnosis_culture_descriptive_stats_block,
     build_interpretation_summary as build_diagnosis_culture_interpretation,
     build_matching_details as build_diagnosis_culture_matching_details,
     build_summary_details as build_diagnosis_culture_summary_details,
+    ulcer_relationship_categories,
 )
 from vetstats_app.analysis.procedure_diagnosis_relationship import (
     ProcedureDiagnosisRelationshipResult,
+    SECTION_TITLE,
+    SUMMARY_RELATIONSHIP_TABLE_COLUMNS,
+    build_descriptive_stats_block as build_procedure_diagnosis_descriptive_stats_block,
     build_interpretation_summary as build_procedure_diagnosis_interpretation,
     build_summary_details as build_procedure_diagnosis_summary_details,
     build_table_details as build_procedure_diagnosis_table_details,
     format_top_diagnoses,
     observed_procedure_categories,
+    procedure_display_label,
 )
 from vetstats_app.analysis.treatment_diagnosis_relationship import (
     TreatmentDiagnosisRelationshipResult,
@@ -48,6 +59,7 @@ from vetstats_app.analysis.treatment_diagnosis_relationship import (
 )
 from vetstats_app.analysis.microbiology_results import (
     MicrobiologyResultsResult,
+    build_descriptive_stats_block as build_microbiology_results_descriptive_stats_block,
     build_interpretation_summary as build_microbiology_results_interpretation,
     build_matching_details as build_microbiology_results_matching_details,
     build_summary_details as build_microbiology_results_summary_details,
@@ -56,6 +68,13 @@ from vetstats_app.analysis.population_characteristics import (
     PopulationCharacteristicsResult,
     build_interpretation_summary as build_population_characteristics_interpretation,
     build_summary_details as build_population_characteristics_summary_details,
+)
+from vetstats_app.analysis.resistance_over_time import (
+    ResistanceOverTimeResult,
+    build_descriptive_stats_block as build_resistance_over_time_descriptive_stats_block,
+    build_inclusion_details as build_resistance_over_time_inclusion_details,
+    build_interpretation_summary as build_resistance_over_time_interpretation,
+    build_summary_details as build_resistance_over_time_summary_details,
 )
 from datetime import datetime
 
@@ -86,6 +105,7 @@ from vetstats_app.services.population_characteristics_service import (
 from vetstats_app.services.procedure_diagnosis_relationship_service import (
     ProcedureDiagnosisRelationshipService,
 )
+from vetstats_app.services.resistance_over_time_service import ResistanceOverTimeService
 from vetstats_app.services.treatment_diagnosis_relationship_service import (
     TreatmentDiagnosisRelationshipService,
 )
@@ -155,12 +175,14 @@ class AnalysisReportService:
         self,
         result: DiagnosisFrequencyResult,
     ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_diagnosis_frequency_descriptive_stats_block(result)
         return AnalysisSectionPayload(
             section_title="Analiza częstości rozpoznań",
             source_labels=(result.source_label,),
             summary_details=_build_diagnosis_frequency_summary_details(result),
             interpretation_summary=build_diagnosis_frequency_interpretation(result),
             table_blocks=(
+                descriptive_stats_block,
                 ReportTableBlock(
                     title="Mapowanie kodów rozpoznań",
                     columns=("Kod", "Rozpoznanie"),
@@ -190,12 +212,14 @@ class AnalysisReportService:
         self,
         result: TreatmentGroupsResult,
     ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_treatment_groups_descriptive_stats_block(result)
         return AnalysisSectionPayload(
             section_title="Analiza leczenia w grupach pacjentów",
             source_labels=(result.source_label,),
             summary_details=_build_treatment_groups_summary_details(result),
             interpretation_summary=build_treatment_groups_interpretation(result),
             table_blocks=(
+                descriptive_stats_block,
                 ReportTableBlock(
                     title="Podział przypadków według typu leczenia (farmacology_surgery)",
                     columns=("Kod", "Kategoria", "Liczba", "Udział (%)"),
@@ -219,6 +243,7 @@ class AnalysisReportService:
         self,
         result: MicrobiologyResultsResult,
     ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_microbiology_results_descriptive_stats_block(result)
         return AnalysisSectionPayload(
             section_title="Analiza wyników mikrobiologicznych",
             source_labels=(
@@ -228,6 +253,7 @@ class AnalysisReportService:
             summary_details=_build_microbiology_results_summary_details(result),
             interpretation_summary=build_microbiology_results_interpretation(result),
             table_blocks=(
+                descriptive_stats_block,
                 ReportTableBlock(
                     title="Najczęściej izolowane bakterie i wyniki negatywne",
                     columns=("Bakteria", "Liczba", "Udział (%)"),
@@ -253,10 +279,59 @@ class AnalysisReportService:
         report = self.prepare_microbiology_results_report(result)
         return self.export_section_report_pdf(report, destination)
 
+    def build_resistance_over_time_payload(
+        self,
+        result: ResistanceOverTimeResult,
+    ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_resistance_over_time_descriptive_stats_block(result)
+        table_blocks: list[ReportTableBlock] = [
+            descriptive_stats_block,
+            ReportTableBlock(
+                title="Zakres czasowy analizy",
+                columns=("Rok", "Obserwacje", "Najczęstsza bakteria", "Liczba"),
+                rows=_resistance_yearly_overview_rows(result),
+            ),
+        ]
+        sensitivity_rows = _resistance_sensitivity_rows(result)
+        if sensitivity_rows:
+            table_blocks.append(
+                ReportTableBlock(
+                    title="Ogólne podsumowanie wrażliwości rocznej",
+                    columns=("Rok", "+++", "+", "0"),
+                    rows=sensitivity_rows,
+                )
+            )
+
+        return AnalysisSectionPayload(
+            section_title="Analiza oporności bakterii w czasie",
+            source_labels=(result.source_label,),
+            summary_details=_build_resistance_over_time_summary_details(result),
+            interpretation_summary=build_resistance_over_time_interpretation(result),
+            table_blocks=tuple(table_blocks),
+            chart_specs=build_resistance_over_time_charts(result),
+        )
+
+    def prepare_resistance_over_time_report(
+        self,
+        result: ResistanceOverTimeResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_resistance_over_time_payload(result)
+        )
+
+    def export_resistance_over_time_report_pdf(
+        self,
+        result: ResistanceOverTimeResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_resistance_over_time_report(result)
+        return self.export_section_report_pdf(report, destination)
+
     def build_diagnosis_culture_relationship_payload(
         self,
         result: DiagnosisCultureRelationshipResult,
     ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_diagnosis_culture_descriptive_stats_block(result)
         return AnalysisSectionPayload(
             section_title="Powiązanie rozpoznań z wynikami posiewu",
             source_labels=(
@@ -266,6 +341,7 @@ class AnalysisReportService:
             summary_details=_build_diagnosis_culture_summary_details(result),
             interpretation_summary=build_diagnosis_culture_interpretation(result),
             table_blocks=(
+                descriptive_stats_block,
                 ReportTableBlock(
                     title="Przypadki według kategorii wrzodu",
                     columns=("Kod", "Kategoria wrzodu", "Liczba przypadków"),
@@ -277,6 +353,7 @@ class AnalysisReportService:
                     rows=_diagnosis_culture_bacteria_rows(result),
                 ),
             ),
+            chart_specs=build_diagnosis_culture_relationship_charts(result),
         )
 
     def prepare_diagnosis_culture_relationship_report(
@@ -299,23 +376,26 @@ class AnalysisReportService:
         self,
         result: ProcedureDiagnosisRelationshipResult,
     ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_procedure_diagnosis_descriptive_stats_block(result)
         return AnalysisSectionPayload(
-            section_title="Powiązanie type_of_surgery z type_of_ulcer",
+            section_title=SECTION_TITLE,
             source_labels=(result.source_label,),
             summary_details=_build_procedure_diagnosis_summary_details(result),
             interpretation_summary=build_procedure_diagnosis_interpretation(result),
             table_blocks=(
+                descriptive_stats_block,
                 ReportTableBlock(
-                    title="Powiązanie type_of_surgery z type_of_ulcer",
-                    columns=(
-                        "Kod type_of_surgery",
-                        "Kategoria procedury",
-                        "Liczba wierszy",
-                        "Najczęstsze kategorie type_of_ulcer",
-                    ),
+                    title=SECTION_TITLE,
+                    columns=SUMMARY_RELATIONSHIP_TABLE_COLUMNS,
                     rows=_procedure_diagnosis_relationship_rows(result),
                 ),
+                ReportTableBlock(
+                    title="Szczegółowe pary zabieg — rozpoznanie",
+                    columns=("Kategoria zabiegu", "Rozpoznanie", "Liczba wierszy"),
+                    rows=_procedure_diagnosis_pair_rows(result),
+                ),
             ),
+            chart_specs=build_procedure_diagnosis_relationship_charts(result),
         )
 
     def prepare_procedure_diagnosis_relationship_report(
@@ -668,11 +748,23 @@ def _procedure_diagnosis_relationship_rows(
     return tuple(
         (
             category.code,
-            category.label,
+            procedure_display_label(category.code),
             str(category.clinical_rows),
             format_top_diagnoses(category.top_diagnoses),
         )
         for category in observed_procedure_categories(result)
+    )
+
+
+def _procedure_diagnosis_pair_rows(
+    result: ProcedureDiagnosisRelationshipResult,
+) -> tuple[tuple[str, ...], ...]:
+    if not result.is_success or result.included_cases == 0:
+        return ()
+    return tuple(
+        (pair.procedure_label, pair.ulcer_label, str(pair.count))
+        for pair in result.procedure_ulcer_pairs
+        if pair.count > 0
     )
 
 
@@ -725,7 +817,7 @@ def _diagnosis_culture_category_rows(
         return ()
     return tuple(
         (category.code, category.label, str(category.matched_cases))
-        for category in result.categories
+        for category in ulcer_relationship_categories(result.categories)
     )
 
 
@@ -736,7 +828,7 @@ def _diagnosis_culture_bacteria_rows(
         return ()
 
     rows: list[tuple[str, ...]] = []
-    for category in result.categories:
+    for category in ulcer_relationship_categories(result.categories):
         if category.matched_cases == 0:
             continue
         if not category.bacteria_rows:
@@ -756,7 +848,7 @@ def _build_diagnosis_culture_summary_details(result: DiagnosisCultureRelationshi
     if result.matching.matched_pairs > 0:
         parts.append(
             "Tabela pokazuje izolowane bakterie w dopasowanych przypadkach "
-            "dla każdej kategorii type_of_ulcer (x jako other). "
+            "dla każdej kategorii type_of_ulcer (x jako other (non ulcer)). "
             "Wykluczono puste i xxx."
         )
     return " ".join(parts)
@@ -790,6 +882,48 @@ def _build_microbiology_results_summary_details(result: MicrobiologyResultsResul
         )
     parts.append(build_microbiology_results_matching_details(result))
     return " ".join(parts)
+
+
+def _resistance_yearly_overview_rows(
+    result: ResistanceOverTimeResult,
+) -> tuple[tuple[str, ...], ...]:
+    if not result.is_success:
+        return ()
+    return tuple(
+        (
+            str(summary.year),
+            str(summary.included_observations),
+            summary.most_common_bacteria or "—",
+            str(summary.most_common_bacteria_count),
+        )
+        for summary in result.yearly_summaries
+    )
+
+
+def _resistance_sensitivity_rows(
+    result: ResistanceOverTimeResult,
+) -> tuple[tuple[str, ...], ...]:
+    if not result.is_success or not result.has_sensitivity_data:
+        return ()
+    return tuple(
+        (
+            str(summary.year),
+            str(next((row.count for row in summary.sensitivity_counts if row.code == "+++"), 0)),
+            str(next((row.count for row in summary.sensitivity_counts if row.code == "+"), 0)),
+            str(next((row.count for row in summary.sensitivity_counts if row.code == "0"), 0)),
+        )
+        for summary in result.yearly_summaries
+    )
+
+
+def _build_resistance_over_time_summary_details(
+    result: ResistanceOverTimeResult,
+) -> str:
+    base = build_resistance_over_time_summary_details(result)
+    if not result.is_success:
+        return base
+
+    return f"{base} {build_resistance_over_time_inclusion_details(result)}"
 
 
 

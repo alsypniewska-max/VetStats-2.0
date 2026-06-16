@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QFileDialog,
@@ -19,18 +20,63 @@ from pathlib import Path
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
     DiagnosisFrequencyResult,
+    build_descriptive_stats_block,
     build_interpretation_summary,
 )
 from vetstats_app.analysis.chart_specs import build_diagnosis_frequency_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_frequency_service import DiagnosisFrequencyService
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
+from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
     finalize_reference_table,
-    stretch_column,
 )
+
+
+def _configure_diagnosis_table(table: QTableWidget) -> None:
+    configure_reference_table(table)
+    table.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+
+
+def _finalize_diagnosis_table(table: QTableWidget) -> None:
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    for column_index in range(table.columnCount()):
+        header.setSectionResizeMode(
+            column_index,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+
+    finalize_reference_table(table)
+
+    total_width = table.frameWidth() * 2
+    if table.verticalHeader().isVisible():
+        total_width += table.verticalHeader().width()
+    for column_index in range(table.columnCount()):
+        total_width += table.columnWidth(column_index)
+    table.setMaximumWidth(total_width)
+
+
+def _build_descriptive_stats_group(result: DiagnosisFrequencyResult) -> QGroupBox:
+    block = build_descriptive_stats_block(result)
+    group = QGroupBox(block.title)
+    layout = QVBoxLayout(group)
+
+    table = QTableWidget()
+    table.setColumnCount(len(block.columns))
+    table.setHorizontalHeaderLabels(list(block.columns))
+    table.setRowCount(len(block.rows))
+    _configure_diagnosis_table(table)
+
+    for row_index, row in enumerate(block.rows):
+        for column_index, value in enumerate(row):
+            table.setItem(row_index, column_index, QTableWidgetItem(value))
+
+    _finalize_diagnosis_table(table)
+    layout.addWidget(table)
+    return group
 
 
 class DiagnosisFrequencyView(QWidget):
@@ -64,18 +110,19 @@ class DiagnosisFrequencyView(QWidget):
         summary_layout.addWidget(QLabel(self._build_summary_details(result)))
         content_layout.addWidget(summary_group)
 
+        content_layout.addWidget(_build_descriptive_stats_group(result))
+
         mapping_group = QGroupBox("Mapowanie kodów rozpoznań")
         mapping_layout = QVBoxLayout(mapping_group)
         mapping_table = QTableWidget()
         mapping_table.setColumnCount(2)
         mapping_table.setHorizontalHeaderLabels(["Kod", "Rozpoznanie"])
         mapping_table.setRowCount(len(DIAGNOSIS_CODE_MAPPING))
-        configure_reference_table(mapping_table)
-        stretch_column(mapping_table, 1)
+        _configure_diagnosis_table(mapping_table)
         for row, (code, diagnosis) in enumerate(DIAGNOSIS_CODE_MAPPING):
             mapping_table.setItem(row, 0, QTableWidgetItem(code))
             mapping_table.setItem(row, 1, QTableWidgetItem(diagnosis))
-        finalize_reference_table(mapping_table)
+        _finalize_diagnosis_table(mapping_table)
         mapping_layout.addWidget(mapping_table)
         content_layout.addWidget(mapping_group)
 
@@ -91,12 +138,9 @@ class DiagnosisFrequencyView(QWidget):
         )
         content_layout.addWidget(chart_group)
 
-        interpretation_group = QGroupBox("Interpretacja")
-        interpretation_layout = QVBoxLayout(interpretation_group)
-        interpretation_layout.addWidget(
-            QLabel(build_interpretation_summary(result))
+        content_layout.addWidget(
+            build_interpretation_section(build_interpretation_summary(result))
         )
-        content_layout.addWidget(interpretation_group)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -156,8 +200,7 @@ class DiagnosisFrequencyView(QWidget):
         table.setColumnCount(4)
         table.setHorizontalHeaderLabels(["Kod", "Rozpoznanie", "Liczba", "Udział (%)"])
         table.setRowCount(len(result.frequencies))
-        configure_reference_table(table)
-        stretch_column(table, 1)
+        _configure_diagnosis_table(table)
 
         for row_index, row in enumerate(result.frequencies):
             table.setItem(row_index, 0, QTableWidgetItem(row.code))
@@ -165,5 +208,5 @@ class DiagnosisFrequencyView(QWidget):
             table.setItem(row_index, 2, QTableWidgetItem(str(row.count)))
             table.setItem(row_index, 3, QTableWidgetItem(f"{row.percentage:.1f}"))
 
-        finalize_reference_table(table)
+        _finalize_diagnosis_table(table)
         return table

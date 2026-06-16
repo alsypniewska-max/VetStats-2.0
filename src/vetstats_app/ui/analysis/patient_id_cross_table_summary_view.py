@@ -25,6 +25,7 @@ from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.patient_id_cross_table_summary_service import (
     PatientIdCrossTableSummaryService,
 )
+from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
@@ -164,10 +165,7 @@ class PatientIdCrossTableSummaryView(QWidget):
             content_layout.addWidget(_section_with_text("Zasięg powiązań", coverage_text))
 
         content_layout.addWidget(
-            _section_with_text(
-                "Interpretacja",
-                build_interpretation_summary(result),
-            )
+            build_interpretation_section(build_interpretation_summary(result))
         )
 
         scroll_area = QScrollArea()

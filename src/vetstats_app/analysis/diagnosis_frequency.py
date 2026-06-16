@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from vetstats_app.analysis.report_models import ReportTableBlock
+
 TYPE_OF_ULCER_COLUMN = "type_of_ulcer"
 UNKNOWN_VALUE = "xxx"
 
@@ -132,4 +134,43 @@ def build_interpretation_summary(result: DiagnosisFrequencyResult) -> str:
         f"{most_common.percentage:.1f}%). "
         f"Najrzadsze rozpoznanie: {least_common.label} ({least_common.count}, "
         f"{least_common.percentage:.1f}%)."
+    )
+
+
+def build_descriptive_stats_block(
+    result: DiagnosisFrequencyResult,
+) -> ReportTableBlock:
+    total_n = result.total_cases
+    included_n = result.included_cases
+    excluded_n = result.excluded_cases
+    included_pct = (included_n / total_n * 100.0) if total_n else 0.0
+    excluded_pct = (excluded_n / total_n * 100.0) if total_n else 0.0
+
+    observed = [row for row in result.frequencies if row.count > 0]
+    nonzero_categories = len(observed)
+
+    if observed:
+        most_common = max(observed, key=lambda row: (row.count, row.label))
+        most_common_label = most_common.label
+        most_common_count = str(most_common.count)
+        most_common_percentage = f"{most_common.percentage:.1f}"
+    else:
+        most_common_label = "—"
+        most_common_count = "0"
+        most_common_percentage = "0.0"
+
+    return ReportTableBlock(
+        title="Statystyki opisowe",
+        columns=("Metryka", "Wartość"),
+        rows=(
+            ("Łączna liczba przypadków (N)", str(total_n)),
+            ("Uwzględnione (n)", str(included_n)),
+            ("Wykluczone (n)", str(excluded_n)),
+            ("Uwzględnione (%)", f"{included_pct:.1f}"),
+            ("Wykluczone (%)", f"{excluded_pct:.1f}"),
+            ("Liczba kategorii z danymi", str(nonzero_categories)),
+            ("Najczęstsza kategoria", most_common_label),
+            ("Liczba — najczęstsza kategoria", most_common_count),
+            ("Udział (%) — najczęstsza kategoria", most_common_percentage),
+        ),
     )

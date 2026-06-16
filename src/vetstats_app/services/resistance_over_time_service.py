@@ -17,7 +17,7 @@ class ResistanceOverTimeService:
         if micro_path is None:
             return ResistanceOverTimeResult(
                 source_label="micro",
-                exclusions=ExclusionSummary(0, 0, 0, 0, 0),
+                exclusions=ExclusionSummary(0, 0, 0, 0, 0, 0),
                 yearly_summaries=(),
                 has_sensitivity_data=False,
                 error_message="Nie znaleziono pliku micro.csv ani micro_sterile.csv.",

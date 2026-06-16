@@ -4,10 +4,14 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from vetstats_app.analysis.report_models import ReportTableBlock
+
 from data_sterilizer.schemas.micro import (
+    ALLOWED_POSITIVE_SUSCEPTIBILITY,
     BACTERIA_COLUMN,
     DATE_COLLECT_COLUMN,
     NEGATIVE_BACTERIA_VALUE,
+    NOT_APPLICABLE_VALUE,
     SUSCEPTIBILITY_COLUMNS,
     parse_micro_date,
 )
@@ -20,6 +24,12 @@ SENSITIVITY_CATEGORY_MAPPING: list[tuple[str, str]] = [
     ("+", "wrażliwość (+)"),
     ("0", "oporność (0)"),
     ("x", "nie dotyczy (x)"),
+]
+
+RESISTANCE_SUMMARY_CATEGORY_MAPPING: list[tuple[str, str]] = [
+    ("+++", "wysoka wrażliwość (+++)"),
+    ("+", "wrażliwość (+)"),
+    ("0", "oporność (0)"),
 ]
 
 VALID_SENSITIVITY_CODES = frozenset(code for code, _ in SENSITIVITY_CATEGORY_MAPPING)
@@ -48,6 +58,7 @@ class ExclusionSummary:
     excluded_invalid_bacteria: int
     excluded_invalid_year: int
     included_total: int
+    excluded_sensitivity_x: int
 
 
 @dataclass(frozen=True)
@@ -125,7 +136,7 @@ def _build_sensitivity_counts(
     if micro_rows.empty or not susceptibility_columns:
         return tuple(
             SensitivityCategoryRow(code=code, label=label, count=0)
-            for code, label in SENSITIVITY_CATEGORY_MAPPING
+            for code, label in RESISTANCE_SUMMARY_CATEGORY_MAPPING
         )
 
     values = micro_rows[susceptibility_columns].stack(future_stack=True)
@@ -138,7 +149,27 @@ def _build_sensitivity_counts(
             label=label,
             count=int(counts.get(code, 0)),
         )
-        for code, label in SENSITIVITY_CATEGORY_MAPPING
+        for code, label in RESISTANCE_SUMMARY_CATEGORY_MAPPING
+    )
+
+
+def _count_sensitivity_x(
+    micro_rows: pd.DataFrame,
+    susceptibility_columns: list[str],
+) -> int:
+    if micro_rows.empty or not susceptibility_columns:
+        return 0
+
+    values = micro_rows[susceptibility_columns].stack(future_stack=True)
+    normalized = values.map(_normalize_sensitivity).dropna()
+    return int((normalized == NOT_APPLICABLE_VALUE).sum())
+
+
+def resistance_relevant_sensitivity_total(summary: YearlyResistanceSummary) -> int:
+    return sum(
+        row.count
+        for row in summary.sensitivity_counts
+        if row.code in ALLOWED_POSITIVE_SUSCEPTIBILITY
     )
 
 
@@ -158,7 +189,7 @@ def compute_resistance_over_time(
             missing.append("date_collect")
         return ResistanceOverTimeResult(
             source_label=source_label,
-            exclusions=ExclusionSummary(0, 0, 0, 0, 0),
+            exclusions=ExclusionSummary(0, 0, 0, 0, 0, 0),
             yearly_summaries=(),
             has_sensitivity_data=False,
             error_message=(
@@ -184,16 +215,18 @@ def compute_resistance_over_time(
     invalid_year_mask = work["_year"].isna()
     included = work.loc[~invalid_year_mask].copy()
 
+    susceptibility_columns = _resolve_susceptibility_columns(micro)
+    has_sensitivity_data = bool(susceptibility_columns)
+    excluded_sensitivity_x = _count_sensitivity_x(included, susceptibility_columns)
+
     exclusions = ExclusionSummary(
         total_micro_rows=total_micro_rows,
         excluded_negative=int(negative_mask.sum()),
         excluded_invalid_bacteria=int(invalid_bacteria_mask.sum()),
         excluded_invalid_year=int(invalid_year_mask.sum()),
         included_total=len(included),
+        excluded_sensitivity_x=excluded_sensitivity_x,
     )
-
-    susceptibility_columns = _resolve_susceptibility_columns(micro)
-    has_sensitivity_data = bool(susceptibility_columns)
 
     yearly_summaries: list[YearlyResistanceSummary] = []
     for year in ANALYSIS_YEARS:
@@ -289,16 +322,112 @@ def build_interpretation_summary(result: ResistanceOverTimeResult) -> str:
     if result.has_sensitivity_data:
         resistance_by_year = []
         for summary in observed_years:
-            resistant = next(
-                (row.count for row in summary.sensitivity_counts if row.code == "0"),
-                0,
+            resistant = _sensitivity_count(summary, "0")
+            relevant = resistance_relevant_sensitivity_total(summary)
+            if relevant == 0:
+                continue
+            rate = resistant / relevant * 100.0
+            resistance_by_year.append(
+                f"{summary.year}: {resistant} oporności (0), {rate:.1f}% "
+                f"(z {relevant} obserwacji wrażliwości)"
             )
-            resistance_by_year.append(f"{summary.year}: {resistant} oporności (0)")
         if resistance_by_year:
             parts.append(
-                "Zagregowane obserwacje wrażliwości (growth + antybiotyki): "
+                "Wskaźniki oporności według roku: "
                 + "; ".join(resistance_by_year)
                 + "."
             )
 
     return " ".join(parts)
+
+
+def _sensitivity_count(summary: YearlyResistanceSummary, code: str) -> int:
+    return next(
+        (row.count for row in summary.sensitivity_counts if row.code == code),
+        0,
+    )
+
+
+def build_descriptive_stats_block(
+    result: ResistanceOverTimeResult,
+) -> ReportTableBlock:
+    exclusions = result.exclusions
+    total_n = exclusions.total_micro_rows
+    included = exclusions.included_total
+    included_pct = (included / total_n * 100.0) if total_n else 0.0
+
+    observed_years = [
+        summary
+        for summary in result.yearly_summaries
+        if summary.included_observations > 0
+    ]
+    years_with_data = len(observed_years)
+
+    if observed_years:
+        busiest = max(
+            observed_years,
+            key=lambda summary: summary.included_observations,
+        )
+        busiest_year = str(busiest.year)
+        busiest_count = str(busiest.included_observations)
+    else:
+        busiest_year = "—"
+        busiest_count = "0"
+
+    total_resistance_relevant = sum(
+        resistance_relevant_sensitivity_total(summary)
+        for summary in result.yearly_summaries
+    )
+    total_resistance = sum(
+        _sensitivity_count(summary, "0") for summary in result.yearly_summaries
+    )
+    total_high_sensitivity = sum(
+        _sensitivity_count(summary, "+++") for summary in result.yearly_summaries
+    )
+    resistance_pct = (
+        (total_resistance / total_resistance_relevant * 100.0)
+        if total_resistance_relevant
+        else 0.0
+    )
+
+    return ReportTableBlock(
+        title="Statystyki opisowe",
+        columns=("Metryka", "Wartość"),
+        rows=(
+            ("Łączna liczba wierszy micro (N)", str(total_n)),
+            ("Wykluczone — negative (n)", str(exclusions.excluded_negative)),
+            (
+                "Wykluczone — nieprawidłowa bacteria (n)",
+                str(exclusions.excluded_invalid_bacteria),
+            ),
+            (
+                "Wykluczone — nieprawidłowy rok (n)",
+                str(exclusions.excluded_invalid_year),
+            ),
+            ("Uwzględnione (n)", str(included)),
+            ("Uwzględnione (%)", f"{included_pct:.1f}"),
+            ("Lata z danymi (n)", str(years_with_data)),
+            ("Najwięcej obserwacji — rok", busiest_year),
+            ("Najwięcej obserwacji — liczba", busiest_count),
+            (
+                "Dane wrażliwości dostępne",
+                "tak" if result.has_sensitivity_data else "nie",
+            ),
+            (
+                "Obserwacje wrażliwości (n)",
+                str(total_resistance_relevant if result.has_sensitivity_data else 0),
+            ),
+            (
+                "Oporność (0) — łącznie (n)",
+                str(total_resistance if result.has_sensitivity_data else 0),
+            ),
+            (
+                "Oporność (0) — udział (%)",
+                f"{resistance_pct:.1f}" if result.has_sensitivity_data else "0.0",
+            ),
+            (
+                "Wysoka wrażliwość (+++) — łącznie (n)",
+                str(total_high_sensitivity if result.has_sensitivity_data else 0),
+            ),
+        ),
+    )

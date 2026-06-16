@@ -12,6 +12,8 @@ class AnalysisChartSpec:
     values: tuple[float, ...]
     x_axis_label: str = ""
     y_axis_label: str = ""
+    orientation: str = "vertical"
+    legend_note: str = ""
 
     @property
     def has_data(self) -> bool:

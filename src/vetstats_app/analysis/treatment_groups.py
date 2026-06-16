@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from vetstats_app.analysis.report_models import ReportTableBlock
+
 TYPE_OF_ULCER_COLUMN = "type_of_ulcer"
 FARMACOLOGY_SURGERY_COLUMNS = ("farmacology_surgery", "pharmacology_surgery")
 TOPICAL_SYSTEMIC_COLUMN = "topical_systemic"
@@ -294,3 +296,59 @@ def build_interpretation_summary(result: TreatmentGroupsResult) -> str:
         )
 
     return " ".join(parts)
+
+
+def build_descriptive_stats_block(
+    result: TreatmentGroupsResult,
+) -> ReportTableBlock:
+    total_n = result.total_cases
+    pharmacology_included = result.pharmacology_included_cases
+    pharmacology_excluded = result.pharmacology_excluded_cases
+    pharmacology_included_pct = (
+        (pharmacology_included / total_n * 100.0) if total_n else 0.0
+    )
+    pharmacology_excluded_pct = (
+        (pharmacology_excluded / total_n * 100.0) if total_n else 0.0
+    )
+
+    topical_included = result.topical_included_cases
+    topical_excluded = result.topical_excluded_cases
+    topical_included_pct = (topical_included / total_n * 100.0) if total_n else 0.0
+    topical_excluded_pct = (topical_excluded / total_n * 100.0) if total_n else 0.0
+
+    pharmacology_nonzero = sum(1 for row in result.pharmacology_rows if row.count > 0)
+    topical_nonzero = sum(1 for row in result.topical_rows if row.count > 0)
+
+    ulcer_success = result.ulcer_success
+
+    return ReportTableBlock(
+        title="Statystyki opisowe",
+        columns=("Metryka", "Wartość"),
+        rows=(
+            ("Łączna liczba przypadków (N)", str(total_n)),
+            ("Farmacology_surgery — uwzględnione (n)", str(pharmacology_included)),
+            ("Farmacology_surgery — wykluczone (n)", str(pharmacology_excluded)),
+            ("Farmacology_surgery — uwzględnione (%)", f"{pharmacology_included_pct:.1f}"),
+            ("Farmacology_surgery — wykluczone (%)", f"{pharmacology_excluded_pct:.1f}"),
+            (
+                "Farmacology_surgery — kategorie z danymi",
+                str(pharmacology_nonzero),
+            ),
+            ("Topical_systemic — uwzględnione (n)", str(topical_included)),
+            ("Topical_systemic — wykluczone (n)", str(topical_excluded)),
+            ("Topical_systemic — uwzględnione (%)", f"{topical_included_pct:.1f}"),
+            ("Topical_systemic — wykluczone (%)", f"{topical_excluded_pct:.1f}"),
+            ("Topical_systemic — kategorie z danymi", str(topical_nonzero)),
+            (
+                "Przypadki wrzodowe (eligible) (n)",
+                str(ulcer_success.eligible_cases),
+            ),
+            ("Ocenione przypadki (n)", str(ulcer_success.evaluated_cases)),
+            ("Zakończone jako good (n)", str(ulcer_success.success_count)),
+            ("Skuteczność (%)", f"{ulcer_success.success_rate:.1f}"),
+            (
+                "Wykluczone continuation (n)",
+                str(ulcer_success.excluded_continuation),
+            ),
+        ),
+    )

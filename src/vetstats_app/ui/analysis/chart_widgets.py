@@ -7,6 +7,19 @@ from vetstats_app.analysis.chart_models import AnalysisChartSpec
 from vetstats_app.services.analysis_chart_renderer import create_chart_widget
 
 
+def exportable_charts(
+    charts: tuple[AnalysisChartSpec, ...],
+) -> tuple[AnalysisChartSpec, ...]:
+    exportable: list[AnalysisChartSpec] = []
+    for chart in charts:
+        if chart.chart_type == "histogram":
+            if len(chart.values) >= 2:
+                exportable.append(chart)
+        elif chart.has_data:
+            exportable.append(chart)
+    return tuple(exportable)
+
+
 def build_chart_section(
     title: str,
     charts: tuple[AnalysisChartSpec, ...],
@@ -20,12 +33,7 @@ def build_chart_section(
         layout.addWidget(QLabel(empty_message))
         return group
 
-    for chart in charts:
-        if chart.chart_type == "histogram":
-            if len(chart.values) < 2:
-                continue
-        elif not chart.has_data:
-            continue
+    for chart in exportable_charts(charts):
         layout.addWidget(
             create_chart_widget(chart),
             alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
