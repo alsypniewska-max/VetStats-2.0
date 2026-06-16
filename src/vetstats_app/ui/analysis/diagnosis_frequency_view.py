@@ -8,15 +8,20 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QFileDialog,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
+
+from pathlib import Path
 
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
     DiagnosisFrequencyResult,
     build_interpretation_summary,
 )
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_frequency_service import DiagnosisFrequencyService
 
 
@@ -32,7 +37,9 @@ class DiagnosisFrequencyView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        result = DiagnosisFrequencyService().analyze()
+        self._result = DiagnosisFrequencyService().analyze()
+        self._report_service = AnalysisReportService()
+        result = self._result
 
         module_title = QLabel("Analiza częstości rozpoznań")
 
@@ -43,6 +50,8 @@ class DiagnosisFrequencyView(QWidget):
         action_bar.addWidget(generate_report_button)
         action_bar.addWidget(export_charts_button)
         action_bar.addStretch()
+
+        generate_report_button.clicked.connect(self._on_generate_report)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -101,6 +110,31 @@ class DiagnosisFrequencyView(QWidget):
         layout.addWidget(module_title)
         layout.addLayout(action_bar)
         layout.addWidget(scroll_area, stretch=1)
+
+    def _on_generate_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport",
+            "diagnosis_frequency_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_diagnosis_frequency_report_pdf(
+            self._result,
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )
+
 
     def _build_summary_details(self, result: DiagnosisFrequencyResult) -> str:
         if not result.is_success:

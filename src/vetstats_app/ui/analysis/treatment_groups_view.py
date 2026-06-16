@@ -1,10 +1,14 @@
 from PyQt6.QtCore import Qt
+from pathlib import Path
+
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QFileDialog,
     QPushButton,
+    QMessageBox,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
@@ -18,6 +22,7 @@ from vetstats_app.analysis.treatment_groups import (
     build_interpretation_summary,
     build_summary_details,
 )
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.treatment_groups_service import TreatmentGroupsService
 
 MODULE_TITLE = "Analiza leczenia w grupach pacjentów"
@@ -75,7 +80,9 @@ class TreatmentGroupsView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        result = TreatmentGroupsService().analyze()
+        self._result = TreatmentGroupsService().analyze()
+        self._report_service = AnalysisReportService()
+        result = self._result
 
         title_label = QLabel(MODULE_TITLE)
 
@@ -86,6 +93,8 @@ class TreatmentGroupsView(QWidget):
         action_bar.addWidget(generate_report_button)
         action_bar.addWidget(export_charts_button)
         action_bar.addStretch()
+
+        generate_report_button.clicked.connect(self._on_generate_report)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -133,6 +142,31 @@ class TreatmentGroupsView(QWidget):
         layout.addWidget(title_label)
         layout.addLayout(action_bar)
         layout.addWidget(scroll_area, stretch=1)
+
+    def _on_generate_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport",
+            "treatment_groups_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_treatment_groups_report_pdf(
+            self._result,
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )
+
 
     def _build_pharmacology_section(self, result: TreatmentGroupsResult) -> QWidget:
         if not result.is_success:

@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QFileDialog,
+    QMessageBox,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -19,6 +23,7 @@ from vetstats_app.analysis.diagnosis_culture_relationship import (
     build_matching_details,
     build_summary_details,
 )
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_culture_relationship_service import (
     DiagnosisCultureRelationshipService,
 )
@@ -108,7 +113,9 @@ class DiagnosisCultureRelationshipView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        result = DiagnosisCultureRelationshipService().analyze()
+        self._result = DiagnosisCultureRelationshipService().analyze()
+        self._report_service = AnalysisReportService()
+        result = self._result
 
         title_label = QLabel(MODULE_TITLE)
 
@@ -119,6 +126,8 @@ class DiagnosisCultureRelationshipView(QWidget):
         action_bar.addWidget(generate_report_button)
         action_bar.addWidget(export_charts_button)
         action_bar.addStretch()
+
+        generate_report_button.clicked.connect(self._on_generate_report)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -172,6 +181,31 @@ class DiagnosisCultureRelationshipView(QWidget):
         layout.addWidget(title_label)
         layout.addLayout(action_bar)
         layout.addWidget(scroll_area, stretch=1)
+
+    def _on_generate_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport",
+            "diagnosis_culture_relationship_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_diagnosis_culture_relationship_report_pdf(
+            self._result,
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )
+
 
     def _build_bacteria_section(self, result: DiagnosisCultureRelationshipResult) -> QWidget:
         if not result.is_success:

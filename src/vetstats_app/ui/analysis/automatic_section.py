@@ -1,6 +1,18 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget
+from pathlib import Path
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QFileDialog,
+    QMessageBox,
+    QPushButton,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.ui.analysis.automatic_module_nav_panel import AutomaticModuleNavPanel
 from vetstats_app.ui.analysis.diagnosis_culture_relationship_view import (
     DiagnosisCultureRelationshipView,
@@ -27,8 +39,17 @@ class AutomaticAnalysisSection(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
+        self._report_service = AnalysisReportService()
+
         title_label = QLabel("Analiza automatyczna")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        combined_report_button = QPushButton("Generuj raport zbiorczy")
+        combined_report_button.clicked.connect(self._on_generate_combined_report)
+
+        header = QHBoxLayout()
+        header.addWidget(title_label, stretch=1)
+        header.addWidget(combined_report_button)
 
         module_nav_panel = AutomaticModuleNavPanel()
 
@@ -48,8 +69,31 @@ class AutomaticAnalysisSection(QWidget):
         body.addWidget(module_stack, stretch=1)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title_label)
+        layout.addLayout(header)
         layout.addLayout(body, stretch=1)
 
         module_nav_panel.connect_current_row_changed(module_stack.setCurrentIndex)
         module_nav_panel.set_current_row(0)
+
+    def _on_generate_combined_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport zbiorczy",
+            "automatic_analysis_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_combined_automatic_analysis_report_pdf(
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport zbiorczy", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport zbiorczy",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )

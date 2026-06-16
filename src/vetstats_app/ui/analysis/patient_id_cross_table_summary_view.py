@@ -1,10 +1,14 @@
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QFileDialog,
     QPushButton,
+    QMessageBox,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
@@ -17,6 +21,7 @@ from vetstats_app.analysis.patient_id_cross_table_summary import (
     build_interpretation_summary,
     build_summary_details,
 )
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.patient_id_cross_table_summary_service import (
     PatientIdCrossTableSummaryService,
 )
@@ -101,7 +106,9 @@ class PatientIdCrossTableSummaryView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        result = PatientIdCrossTableSummaryService().analyze()
+        self._result = PatientIdCrossTableSummaryService().analyze()
+        self._report_service = AnalysisReportService()
+        result = self._result
 
         title_label = QLabel(MODULE_TITLE)
 
@@ -112,6 +119,8 @@ class PatientIdCrossTableSummaryView(QWidget):
         action_bar.addWidget(generate_report_button)
         action_bar.addWidget(export_charts_button)
         action_bar.addStretch()
+
+        generate_report_button.clicked.connect(self._on_generate_report)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -174,6 +183,30 @@ class PatientIdCrossTableSummaryView(QWidget):
         layout.addWidget(title_label)
         layout.addLayout(action_bar)
         layout.addWidget(scroll_area, stretch=1)
+
+    def _on_generate_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport",
+            "patient_id_cross_table_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_patient_id_cross_table_report_pdf(
+            self._result,
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )
 
 
 def _section_with_widget(title: str, widget: QWidget) -> QGroupBox:
