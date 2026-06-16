@@ -32,6 +32,14 @@ from vetstats_app.analysis.procedure_diagnosis_relationship import (
     format_top_diagnoses,
     observed_procedure_categories,
 )
+from vetstats_app.analysis.treatment_diagnosis_relationship import (
+    TreatmentDiagnosisRelationshipResult,
+    build_interpretation_summary as build_treatment_diagnosis_interpretation,
+    build_summary_details as build_treatment_diagnosis_summary_details,
+    build_table_details as build_treatment_diagnosis_table_details,
+    format_top_ulcer_categories,
+    observed_treatment_categories,
+)
 from vetstats_app.analysis.microbiology_results import (
     MicrobiologyResultsResult,
     build_interpretation_summary as build_microbiology_results_interpretation,
@@ -60,6 +68,9 @@ from vetstats_app.services.section_report_pdf import (
 from vetstats_app.services.microbiology_results_service import MicrobiologyResultsService
 from vetstats_app.services.procedure_diagnosis_relationship_service import (
     ProcedureDiagnosisRelationshipService,
+)
+from vetstats_app.services.treatment_diagnosis_relationship_service import (
+    TreatmentDiagnosisRelationshipService,
 )
 from vetstats_app.services.treatment_groups_service import TreatmentGroupsService
 
@@ -267,6 +278,45 @@ class AnalysisReportService:
         report = self.prepare_procedure_diagnosis_relationship_report(result)
         return self.export_section_report_pdf(report, destination)
 
+    def build_treatment_diagnosis_relationship_payload(
+        self,
+        result: TreatmentDiagnosisRelationshipResult,
+    ) -> AnalysisSectionPayload:
+        return AnalysisSectionPayload(
+            section_title="Powiązanie topical_systemic z type_of_ulcer",
+            source_labels=(result.source_label,),
+            summary_details=_build_treatment_diagnosis_summary_details(result),
+            interpretation_summary=build_treatment_diagnosis_interpretation(result),
+            table_blocks=(
+                ReportTableBlock(
+                    title="Powiązanie topical_systemic z type_of_ulcer",
+                    columns=(
+                        "Kod topical_systemic",
+                        "Kategoria leczenia",
+                        "Liczba wierszy",
+                        "Najczęstsze kategorie type_of_ulcer",
+                    ),
+                    rows=_treatment_diagnosis_relationship_rows(result),
+                ),
+            ),
+        )
+
+    def prepare_treatment_diagnosis_relationship_report(
+        self,
+        result: TreatmentDiagnosisRelationshipResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_treatment_diagnosis_relationship_payload(result)
+        )
+
+    def export_treatment_diagnosis_relationship_report_pdf(
+        self,
+        result: TreatmentDiagnosisRelationshipResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_treatment_diagnosis_relationship_report(result)
+        return self.export_section_report_pdf(report, destination)
+
     def prepare_treatment_groups_report(
         self,
         result: TreatmentGroupsResult,
@@ -404,13 +454,14 @@ class AnalysisReportService:
         microbiology_result = MicrobiologyResultsService().analyze()
         diagnosis_culture_result = DiagnosisCultureRelationshipService().analyze()
         procedure_diagnosis_result = ProcedureDiagnosisRelationshipService().analyze()
+        treatment_diagnosis_result = TreatmentDiagnosisRelationshipService().analyze()
 
         return CombinedAnalysisReport(
             report_title="Raport analizy automatycznej",
             generation_context=(
                 "Wygenerowano: "
                 f"{datetime.now().strftime('%Y-%m-%d %H:%M')}. "
-                "Raport łączy sześć modułów analizy automatycznej."
+                "Raport łączy siedem modułów analizy automatycznej."
             ),
             sections=(
                 self.prepare_diagnosis_frequency_report(diagnosis_result),
@@ -419,6 +470,7 @@ class AnalysisReportService:
                 self.prepare_microbiology_results_report(microbiology_result),
                 self.prepare_diagnosis_culture_relationship_report(diagnosis_culture_result),
                 self.prepare_procedure_diagnosis_relationship_report(procedure_diagnosis_result),
+                self.prepare_treatment_diagnosis_relationship_report(treatment_diagnosis_result),
             ),
         )
 
@@ -461,6 +513,34 @@ def _build_procedure_diagnosis_summary_details(
         return base
     return f"{base} {table_note}"
 
+
+def _treatment_diagnosis_relationship_rows(
+    result: TreatmentDiagnosisRelationshipResult,
+) -> tuple[tuple[str, ...], ...]:
+    if not result.is_success or result.included_cases == 0:
+        return ()
+    return tuple(
+        (
+            category.code,
+            category.label,
+            str(category.clinical_rows),
+            format_top_ulcer_categories(category.top_ulcer_categories),
+        )
+        for category in observed_treatment_categories(result)
+    )
+
+
+def _build_treatment_diagnosis_summary_details(
+    result: TreatmentDiagnosisRelationshipResult,
+) -> str:
+    base = build_treatment_diagnosis_summary_details(result)
+    if not result.is_success:
+        return base
+
+    table_note = build_treatment_diagnosis_table_details(result)
+    if not table_note:
+        return base
+    return f"{base} {table_note}"
 
 
 def _diagnosis_culture_category_rows(

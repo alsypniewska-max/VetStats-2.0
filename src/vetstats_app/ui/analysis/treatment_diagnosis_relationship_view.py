@@ -1,5 +1,9 @@
+from pathlib import Path
+
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QFileDialog,
+    QMessageBox,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -20,6 +24,7 @@ from vetstats_app.analysis.treatment_diagnosis_relationship import (
     format_top_ulcer_categories,
     observed_treatment_categories,
 )
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.treatment_diagnosis_relationship_service import (
     TreatmentDiagnosisRelationshipService,
 )
@@ -100,7 +105,9 @@ class TreatmentDiagnosisRelationshipView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        result = TreatmentDiagnosisRelationshipService().analyze()
+        self._result = TreatmentDiagnosisRelationshipService().analyze()
+        self._report_service = AnalysisReportService()
+        result = self._result
 
         title_label = QLabel(MODULE_TITLE)
 
@@ -111,6 +118,8 @@ class TreatmentDiagnosisRelationshipView(QWidget):
         action_bar.addWidget(generate_report_button)
         action_bar.addWidget(export_charts_button)
         action_bar.addStretch()
+
+        generate_report_button.clicked.connect(self._on_generate_report)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -150,3 +159,27 @@ class TreatmentDiagnosisRelationshipView(QWidget):
         layout.addWidget(title_label)
         layout.addLayout(action_bar)
         layout.addWidget(scroll_area, stretch=1)
+
+    def _on_generate_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport",
+            "treatment_diagnosis_relationship_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_treatment_diagnosis_relationship_report_pdf(
+            self._result,
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )
