@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from PyQt6.QtWidgets import QListWidget, QVBoxLayout, QWidget
 
 TABLE_NAMES = [
@@ -19,3 +21,9 @@ class TableNavPanel(QWidget):
         layout.addWidget(self._table_list)
 
         self._table_list.setCurrentRow(0)
+
+    def connect_current_row_changed(self, callback: Callable[[int], None]) -> None:
+        self._table_list.currentRowChanged.connect(callback)
+
+    def set_current_row(self, row: int) -> None:
+        self._table_list.setCurrentRow(row)

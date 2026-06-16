@@ -25,14 +25,12 @@ from vetstats_app.analysis.chart_specs import build_diagnosis_frequency_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_frequency_service import DiagnosisFrequencyService
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-
-
-def _configure_reference_table(table: QTableWidget) -> None:
-    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.setSortingEnabled(False)
-    table.horizontalHeader().setSortIndicatorShown(False)
+from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
+from vetstats_app.ui.analysis.reference_table import (
+    configure_reference_table,
+    finalize_reference_table,
+    stretch_column,
+)
 
 
 class DiagnosisFrequencyView(QWidget):
@@ -43,15 +41,12 @@ class DiagnosisFrequencyView(QWidget):
         self._report_service = AnalysisReportService()
         result = self._result
 
-        module_title = QLabel("Analiza częstości rozpoznań")
-
         generate_report_button = QPushButton("Generuj raport")
         export_charts_button = QPushButton("Eksport wykresów")
-
-        action_bar = QHBoxLayout()
-        action_bar.addWidget(generate_report_button)
-        action_bar.addWidget(export_charts_button)
-        action_bar.addStretch()
+        self._action_bar_widget = build_module_action_bar(
+            generate_report_button,
+            export_charts_button,
+        )
 
         generate_report_button.clicked.connect(self._on_generate_report)
 
@@ -75,13 +70,12 @@ class DiagnosisFrequencyView(QWidget):
         mapping_table.setColumnCount(2)
         mapping_table.setHorizontalHeaderLabels(["Kod", "Rozpoznanie"])
         mapping_table.setRowCount(len(DIAGNOSIS_CODE_MAPPING))
-        _configure_reference_table(mapping_table)
-        mapping_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        configure_reference_table(mapping_table)
+        stretch_column(mapping_table, 1)
         for row, (code, diagnosis) in enumerate(DIAGNOSIS_CODE_MAPPING):
             mapping_table.setItem(row, 0, QTableWidgetItem(code))
             mapping_table.setItem(row, 1, QTableWidgetItem(diagnosis))
+        finalize_reference_table(mapping_table)
         mapping_layout.addWidget(mapping_table)
         content_layout.addWidget(mapping_group)
 
@@ -109,9 +103,11 @@ class DiagnosisFrequencyView(QWidget):
         scroll_area.setWidget(content_widget)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(module_title)
-        layout.addLayout(action_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area, stretch=1)
+
+    def action_bar_widget(self) -> QWidget:
+        return self._action_bar_widget
 
     def _on_generate_report(self) -> None:
         destination, _selected_filter = QFileDialog.getSaveFileName(
@@ -160,10 +156,8 @@ class DiagnosisFrequencyView(QWidget):
         table.setColumnCount(4)
         table.setHorizontalHeaderLabels(["Kod", "Rozpoznanie", "Liczba", "Udział (%)"])
         table.setRowCount(len(result.frequencies))
-        _configure_reference_table(table)
-        table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
+        configure_reference_table(table)
+        stretch_column(table, 1)
 
         for row_index, row in enumerate(result.frequencies):
             table.setItem(row_index, 0, QTableWidgetItem(row.code))
@@ -171,4 +165,5 @@ class DiagnosisFrequencyView(QWidget):
             table.setItem(row_index, 2, QTableWidgetItem(str(row.count)))
             table.setItem(row_index, 3, QTableWidgetItem(f"{row.percentage:.1f}"))
 
+        finalize_reference_table(table)
         return table

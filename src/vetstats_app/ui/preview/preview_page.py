@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
+from vetstats_app.services.preview_data_service import PreviewDataService
 from vetstats_app.ui.preview.summary_panel import SummaryPanel
 from vetstats_app.ui.preview.table_nav_panel import TABLE_NAMES, TableNavPanel
 from vetstats_app.ui.preview.table_preview_panel import TablePreviewPanel
@@ -9,12 +10,14 @@ class PreviewPage(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        summary_panel = SummaryPanel()
+        snapshots = PreviewDataService().load_all()
+
+        summary_panel = SummaryPanel(snapshots)
         table_nav_panel = TableNavPanel()
 
         table_preview_stack = QStackedWidget()
         for table_name in TABLE_NAMES:
-            table_preview_stack.addWidget(TablePreviewPanel(table_name))
+            table_preview_stack.addWidget(TablePreviewPanel(snapshots[table_name]))
 
         body = QHBoxLayout()
         body.addWidget(table_nav_panel)
@@ -22,9 +25,7 @@ class PreviewPage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(summary_panel)
-        layout.addLayout(body)
+        layout.addLayout(body, stretch=1)
 
-        table_nav_panel._table_list.currentRowChanged.connect(
-            table_preview_stack.setCurrentIndex
-        )
-        table_nav_panel._table_list.setCurrentRow(0)
+        table_nav_panel.connect_current_row_changed(table_preview_stack.setCurrentIndex)
+        table_nav_panel.set_current_row(0)

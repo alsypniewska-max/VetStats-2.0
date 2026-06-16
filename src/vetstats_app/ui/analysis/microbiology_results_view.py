@@ -27,16 +27,14 @@ from vetstats_app.analysis.chart_specs import build_microbiology_results_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.microbiology_results_service import MicrobiologyResultsService
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
+from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
+from vetstats_app.ui.analysis.reference_table import (
+    configure_reference_table,
+    finalize_reference_table,
+    stretch_column,
+)
 
 MODULE_TITLE = "Analiza wyników mikrobiologicznych"
-
-
-def _configure_reference_table(table: QTableWidget) -> None:
-    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.setSortingEnabled(False)
-    table.horizontalHeader().setSortIndicatorShown(False)
 
 
 def _build_bacteria_table(rows: tuple[BacteriaFrequencyRow, ...]) -> QWidget:
@@ -47,16 +45,15 @@ def _build_bacteria_table(rows: tuple[BacteriaFrequencyRow, ...]) -> QWidget:
     table.setColumnCount(3)
     table.setHorizontalHeaderLabels(["Bakteria", "Liczba", "Udział (%)"])
     table.setRowCount(len(rows))
-    _configure_reference_table(table)
-    table.horizontalHeader().setSectionResizeMode(
-        0, QHeaderView.ResizeMode.Stretch
-    )
+    configure_reference_table(table)
+    stretch_column(table, 0)
 
     for row_index, row in enumerate(rows):
         table.setItem(row_index, 0, QTableWidgetItem(row.bacteria))
         table.setItem(row_index, 1, QTableWidgetItem(str(row.count)))
         table.setItem(row_index, 2, QTableWidgetItem(f"{row.percentage:.1f}"))
 
+    finalize_reference_table(table)
     return table
 
 
@@ -82,15 +79,12 @@ class MicrobiologyResultsView(QWidget):
         self._report_service = AnalysisReportService()
         result = self._result
 
-        title_label = QLabel(MODULE_TITLE)
-
         generate_report_button = QPushButton("Generuj raport")
         export_charts_button = QPushButton("Eksport wykresów")
-
-        action_bar = QHBoxLayout()
-        action_bar.addWidget(generate_report_button)
-        action_bar.addWidget(export_charts_button)
-        action_bar.addStretch()
+        self._action_bar_widget = build_module_action_bar(
+            generate_report_button,
+            export_charts_button,
+        )
 
         generate_report_button.clicked.connect(self._on_generate_report)
 
@@ -142,9 +136,11 @@ class MicrobiologyResultsView(QWidget):
         scroll_area.setWidget(content_widget)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title_label)
-        layout.addLayout(action_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area, stretch=1)
+
+    def action_bar_widget(self) -> QWidget:
+        return self._action_bar_widget
 
     def _on_generate_report(self) -> None:
         destination, _selected_filter = QFileDialog.getSaveFileName(

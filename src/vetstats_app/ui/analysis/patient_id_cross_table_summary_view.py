@@ -25,16 +25,14 @@ from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.patient_id_cross_table_summary_service import (
     PatientIdCrossTableSummaryService,
 )
+from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
+from vetstats_app.ui.analysis.reference_table import (
+    configure_reference_table,
+    finalize_reference_table,
+    stretch_column,
+)
 
 MODULE_TITLE = "Podsumowanie powiązań patient_ID między tabelami"
-
-
-def _configure_reference_table(table: QTableWidget) -> None:
-    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.setSortingEnabled(False)
-    table.horizontalHeader().setSortIndicatorShown(False)
 
 
 def _section_with_text(title: str, text: str) -> QGroupBox:
@@ -57,10 +55,8 @@ def _build_table_counts_table(result: PatientIdCrossTableSummaryResult) -> QWidg
         ["Tabela", "Źródło", "Unikalne patient_ID", "Wykluczone wiersze"]
     )
     table.setRowCount(len(result.tables))
-    _configure_reference_table(table)
-    table.horizontalHeader().setSectionResizeMode(
-        1, QHeaderView.ResizeMode.Stretch
-    )
+    configure_reference_table(table)
+    stretch_column(table, 1)
 
     for row_index, entry in enumerate(result.tables):
         table.setItem(row_index, 0, QTableWidgetItem(entry.table_name))
@@ -68,6 +64,7 @@ def _build_table_counts_table(result: PatientIdCrossTableSummaryResult) -> QWidg
         table.setItem(row_index, 2, QTableWidgetItem(str(entry.unique_patient_ids)))
         table.setItem(row_index, 3, QTableWidgetItem(str(entry.excluded_rows)))
 
+    finalize_reference_table(table)
     return table
 
 
@@ -90,7 +87,9 @@ def _build_pairwise_table(result: PatientIdCrossTableSummaryResult) -> QWidget:
         ]
     )
     table.setRowCount(len(result.pairwise))
-    _configure_reference_table(table)
+    configure_reference_table(table)
+    stretch_column(table, 0)
+    stretch_column(table, 1)
 
     for row_index, linkage in enumerate(result.pairwise):
         table.setItem(row_index, 0, QTableWidgetItem(linkage.table_a))
@@ -99,6 +98,7 @@ def _build_pairwise_table(result: PatientIdCrossTableSummaryResult) -> QWidget:
         table.setItem(row_index, 3, QTableWidgetItem(str(linkage.only_in_a)))
         table.setItem(row_index, 4, QTableWidgetItem(str(linkage.only_in_b)))
 
+    finalize_reference_table(table)
     return table
 
 
@@ -110,15 +110,12 @@ class PatientIdCrossTableSummaryView(QWidget):
         self._report_service = AnalysisReportService()
         result = self._result
 
-        title_label = QLabel(MODULE_TITLE)
-
         generate_report_button = QPushButton("Generuj raport")
         export_charts_button = QPushButton("Eksport wykresów")
-
-        action_bar = QHBoxLayout()
-        action_bar.addWidget(generate_report_button)
-        action_bar.addWidget(export_charts_button)
-        action_bar.addStretch()
+        self._action_bar_widget = build_module_action_bar(
+            generate_report_button,
+            export_charts_button,
+        )
 
         generate_report_button.clicked.connect(self._on_generate_report)
 
@@ -180,9 +177,11 @@ class PatientIdCrossTableSummaryView(QWidget):
         scroll_area.setWidget(content_widget)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title_label)
-        layout.addLayout(action_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area, stretch=1)
+
+    def action_bar_widget(self) -> QWidget:
+        return self._action_bar_widget
 
     def _on_generate_report(self) -> None:
         destination, _selected_filter = QFileDialog.getSaveFileName(

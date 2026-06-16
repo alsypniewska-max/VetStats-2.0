@@ -22,16 +22,12 @@ from vetstats_app.services.population_characteristics_service import (
     PopulationCharacteristicsService,
 )
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-
-MODULE_TITLE = "Charakterystyka populacji pacjentów"
-
-
-def _configure_reference_table(table: QTableWidget) -> None:
-    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.setSortingEnabled(False)
-    table.horizontalHeader().setSortIndicatorShown(False)
+from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
+from vetstats_app.ui.analysis.reference_table import (
+    configure_reference_table,
+    finalize_reference_table,
+    stretch_column,
+)
 
 
 def _build_counts_table(result: PopulationCharacteristicsResult) -> QTableWidget:
@@ -44,13 +40,12 @@ def _build_counts_table(result: PopulationCharacteristicsResult) -> QTableWidget
         ("Liczba gatunków", str(result.species_count)),
     ]
     table.setRowCount(len(rows))
-    _configure_reference_table(table)
-    table.horizontalHeader().setSectionResizeMode(
-        1, QHeaderView.ResizeMode.Stretch
-    )
+    configure_reference_table(table)
+    stretch_column(table, 1)
     for row_index, (metric, value) in enumerate(rows):
         table.setItem(row_index, 0, QTableWidgetItem(metric))
         table.setItem(row_index, 1, QTableWidgetItem(value))
+    finalize_reference_table(table)
     return table
 
 
@@ -62,15 +57,12 @@ class PopulationCharacteristicsView(QWidget):
         result = self._result
         charts = build_population_characteristics_charts(result)
 
-        module_title = QLabel(MODULE_TITLE)
-
         generate_report_button = QPushButton("Generuj raport")
         export_charts_button = QPushButton("Eksport wykresów")
-
-        action_bar = QHBoxLayout()
-        action_bar.addWidget(generate_report_button)
-        action_bar.addWidget(export_charts_button)
-        action_bar.addStretch()
+        self._action_bar_widget = build_module_action_bar(
+            generate_report_button,
+            export_charts_button,
+        )
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -111,6 +103,8 @@ class PopulationCharacteristicsView(QWidget):
         scroll_area.setWidget(content_widget)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(module_title)
-        layout.addLayout(action_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area, stretch=1)
+
+    def action_bar_widget(self) -> QWidget:
+        return self._action_bar_widget

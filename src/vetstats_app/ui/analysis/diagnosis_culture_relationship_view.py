@@ -27,16 +27,14 @@ from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_culture_relationship_service import (
     DiagnosisCultureRelationshipService,
 )
+from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
+from vetstats_app.ui.analysis.reference_table import (
+    configure_reference_table,
+    finalize_reference_table,
+    stretch_column,
+)
 
 MODULE_TITLE = "Powiązanie rozpoznań z wynikami posiewu"
-
-
-def _configure_reference_table(table: QTableWidget) -> None:
-    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.setSortingEnabled(False)
-    table.horizontalHeader().setSortIndicatorShown(False)
 
 
 def _section_with_widget(title: str, widget: QWidget) -> QGroupBox:
@@ -60,16 +58,15 @@ def _build_category_cases_table(
     table.setColumnCount(3)
     table.setHorizontalHeaderLabels(["Kod", "Kategoria wrzodu", "Liczba przypadków"])
     table.setRowCount(len(categories))
-    _configure_reference_table(table)
-    table.horizontalHeader().setSectionResizeMode(
-        1, QHeaderView.ResizeMode.Stretch
-    )
+    configure_reference_table(table)
+    stretch_column(table, 1)
 
     for row_index, category in enumerate(categories):
         table.setItem(row_index, 0, QTableWidgetItem(category.code))
         table.setItem(row_index, 1, QTableWidgetItem(category.label))
         table.setItem(row_index, 2, QTableWidgetItem(str(category.matched_cases)))
 
+    finalize_reference_table(table)
     return table
 
 
@@ -93,19 +90,16 @@ def _build_bacteria_by_category_table(
     table.setColumnCount(3)
     table.setHorizontalHeaderLabels(["Kategoria wrzodu", "Bakteria", "Liczba"])
     table.setRowCount(len(rows))
-    _configure_reference_table(table)
-    table.horizontalHeader().setSectionResizeMode(
-        0, QHeaderView.ResizeMode.Stretch
-    )
-    table.horizontalHeader().setSectionResizeMode(
-        1, QHeaderView.ResizeMode.Stretch
-    )
+    configure_reference_table(table)
+    stretch_column(table, 0)
+    stretch_column(table, 1)
 
     for row_index, (category_label, bacteria, count) in enumerate(rows):
         table.setItem(row_index, 0, QTableWidgetItem(category_label))
         table.setItem(row_index, 1, QTableWidgetItem(bacteria))
         table.setItem(row_index, 2, QTableWidgetItem(str(count)))
 
+    finalize_reference_table(table)
     return table
 
 
@@ -117,15 +111,12 @@ class DiagnosisCultureRelationshipView(QWidget):
         self._report_service = AnalysisReportService()
         result = self._result
 
-        title_label = QLabel(MODULE_TITLE)
-
         generate_report_button = QPushButton("Generuj raport")
         export_charts_button = QPushButton("Eksport wykresów")
-
-        action_bar = QHBoxLayout()
-        action_bar.addWidget(generate_report_button)
-        action_bar.addWidget(export_charts_button)
-        action_bar.addStretch()
+        self._action_bar_widget = build_module_action_bar(
+            generate_report_button,
+            export_charts_button,
+        )
 
         generate_report_button.clicked.connect(self._on_generate_report)
 
@@ -178,9 +169,11 @@ class DiagnosisCultureRelationshipView(QWidget):
         scroll_area.setWidget(content_widget)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title_label)
-        layout.addLayout(action_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area, stretch=1)
+
+    def action_bar_widget(self) -> QWidget:
+        return self._action_bar_widget
 
     def _on_generate_report(self) -> None:
         destination, _selected_filter = QFileDialog.getSaveFileName(

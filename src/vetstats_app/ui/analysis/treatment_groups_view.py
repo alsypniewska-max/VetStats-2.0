@@ -26,16 +26,14 @@ from vetstats_app.analysis.chart_specs import build_treatment_groups_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.treatment_groups_service import TreatmentGroupsService
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
+from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
+from vetstats_app.ui.analysis.reference_table import (
+    configure_reference_table,
+    finalize_reference_table,
+    stretch_column,
+)
 
 MODULE_TITLE = "Analiza leczenia w grupach pacjentów"
-
-
-def _configure_reference_table(table: QTableWidget) -> None:
-    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-    table.setSortingEnabled(False)
-    table.horizontalHeader().setSortIndicatorShown(False)
 
 
 def _build_category_table(
@@ -50,10 +48,8 @@ def _build_category_table(
     table.setColumnCount(4)
     table.setHorizontalHeaderLabels(["Kod", "Kategoria", "Liczba", "Udział (%)"])
     table.setRowCount(len(rows))
-    _configure_reference_table(table)
-    table.horizontalHeader().setSectionResizeMode(
-        1, QHeaderView.ResizeMode.Stretch
-    )
+    configure_reference_table(table)
+    stretch_column(table, 1)
 
     for row_index, row in enumerate(rows):
         table.setItem(row_index, 0, QTableWidgetItem(row.code))
@@ -61,6 +57,7 @@ def _build_category_table(
         table.setItem(row_index, 2, QTableWidgetItem(str(row.count)))
         table.setItem(row_index, 3, QTableWidgetItem(f"{row.percentage:.1f}"))
 
+    finalize_reference_table(table)
     return table
 
 
@@ -86,15 +83,12 @@ class TreatmentGroupsView(QWidget):
         self._report_service = AnalysisReportService()
         result = self._result
 
-        title_label = QLabel(MODULE_TITLE)
-
         generate_report_button = QPushButton("Generuj raport")
         export_charts_button = QPushButton("Eksport wykresów")
-
-        action_bar = QHBoxLayout()
-        action_bar.addWidget(generate_report_button)
-        action_bar.addWidget(export_charts_button)
-        action_bar.addStretch()
+        self._action_bar_widget = build_module_action_bar(
+            generate_report_button,
+            export_charts_button,
+        )
 
         generate_report_button.clicked.connect(self._on_generate_report)
 
@@ -148,9 +142,11 @@ class TreatmentGroupsView(QWidget):
         scroll_area.setWidget(content_widget)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title_label)
-        layout.addLayout(action_bar)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(scroll_area, stretch=1)
+
+    def action_bar_widget(self) -> QWidget:
+        return self._action_bar_widget
 
     def _on_generate_report(self) -> None:
         destination, _selected_filter = QFileDialog.getSaveFileName(
@@ -252,10 +248,8 @@ class TreatmentGroupsView(QWidget):
         table.setColumnCount(2)
         table.setHorizontalHeaderLabels(["Metryka", "Wartość"])
         table.setRowCount(5)
-        _configure_reference_table(table)
-        table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
+        configure_reference_table(table)
+        stretch_column(table, 0)
 
         metrics = [
             ("Przypadki wrzodowe (bez x i xxx)", str(ulcer_success.eligible_cases)),
@@ -267,6 +261,7 @@ class TreatmentGroupsView(QWidget):
         for row_index, (metric, value) in enumerate(metrics):
             table.setItem(row_index, 0, QTableWidgetItem(metric))
             table.setItem(row_index, 1, QTableWidgetItem(value))
+        finalize_reference_table(table)
 
         container = QWidget()
         layout = QVBoxLayout(container)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QGroupBox, QLabel, QVBoxLayout, QWidget
 
 from vetstats_app.analysis.chart_models import AnalysisChartSpec
@@ -25,7 +26,10 @@ def build_chart_section(
                 continue
         elif not chart.has_data:
             continue
-        layout.addWidget(create_chart_widget(chart))
+        layout.addWidget(
+            create_chart_widget(chart),
+            alignment=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+        )
 
     if layout.count() == 0:
         layout.addWidget(QLabel(empty_message))
