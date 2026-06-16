@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from vetstats_app.analysis.chart_specs import (
+    build_diagnosis_frequency_charts,
+    build_microbiology_results_charts,
+    build_population_characteristics_charts,
+    build_treatment_groups_charts,
+)
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
     DiagnosisFrequencyResult,
@@ -46,6 +52,11 @@ from vetstats_app.analysis.microbiology_results import (
     build_matching_details as build_microbiology_results_matching_details,
     build_summary_details as build_microbiology_results_summary_details,
 )
+from vetstats_app.analysis.population_characteristics import (
+    PopulationCharacteristicsResult,
+    build_interpretation_summary as build_population_characteristics_interpretation,
+    build_summary_details as build_population_characteristics_summary_details,
+)
 from datetime import datetime
 
 from data_sterilizer.config import DEFAULT_INPUT_DIR, DEFAULT_OUTPUT_DIR, sterile_output_name
@@ -69,6 +80,9 @@ from vetstats_app.services.section_report_pdf import (
     write_section_report_pdf,
 )
 from vetstats_app.services.microbiology_results_service import MicrobiologyResultsService
+from vetstats_app.services.population_characteristics_service import (
+    PopulationCharacteristicsService,
+)
 from vetstats_app.services.procedure_diagnosis_relationship_service import (
     ProcedureDiagnosisRelationshipService,
 )
@@ -99,6 +113,42 @@ class AnalysisReportService:
                 )
                 for block in payload.table_blocks
             ),
+            chart_specs=payload.chart_specs,
+        )
+
+    def build_population_characteristics_payload(
+        self,
+        result: PopulationCharacteristicsResult,
+    ) -> AnalysisSectionPayload:
+        table_blocks: tuple[ReportTableBlock, ...] = ()
+        if result.is_success:
+            table_blocks = (
+                ReportTableBlock(
+                    title="Podstawowe liczby",
+                    columns=("Metryka", "Wartość"),
+                    rows=(
+                        ("Liczba pacjentów", str(result.total_patients)),
+                        ("Liczba rekordów", str(result.total_records)),
+                        ("Liczba gatunków", str(result.species_count)),
+                    ),
+                ),
+            )
+
+        return AnalysisSectionPayload(
+            section_title="Charakterystyka populacji pacjentów",
+            source_labels=(result.source_label,),
+            summary_details=build_population_characteristics_summary_details(result),
+            interpretation_summary=build_population_characteristics_interpretation(result),
+            table_blocks=table_blocks,
+            chart_specs=build_population_characteristics_charts(result),
+        )
+
+    def prepare_population_characteristics_report(
+        self,
+        result: PopulationCharacteristicsResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_population_characteristics_payload(result)
         )
 
     def build_diagnosis_frequency_payload(
@@ -133,6 +183,7 @@ class AnalysisReportService:
                     ),
                 ),
             ),
+            chart_specs=build_diagnosis_frequency_charts(result),
         )
 
     def build_treatment_groups_payload(
@@ -161,6 +212,7 @@ class AnalysisReportService:
                     rows=_ulcer_success_rows(result),
                 ),
             ),
+            chart_specs=build_treatment_groups_charts(result),
         )
 
     def build_microbiology_results_payload(
@@ -182,6 +234,7 @@ class AnalysisReportService:
                     rows=_microbiology_bacteria_rows(result),
                 ),
             ),
+            chart_specs=build_microbiology_results_charts(result),
         )
 
     def prepare_microbiology_results_report(
@@ -451,6 +504,7 @@ class AnalysisReportService:
     def prepare_combined_automatic_analysis_report(
         self,
     ) -> CombinedAnalysisReport:
+        population_result = PopulationCharacteristicsService().analyze()
         diagnosis_result = DiagnosisFrequencyService().analyze()
         treatment_result = TreatmentGroupsService().analyze()
         patient_id_result = PatientIdCrossTableSummaryService().analyze()
@@ -460,6 +514,7 @@ class AnalysisReportService:
         treatment_diagnosis_result = TreatmentDiagnosisRelationshipService().analyze()
 
         sections = (
+            self.prepare_population_characteristics_report(population_result),
             self.prepare_diagnosis_frequency_report(diagnosis_result),
             self.prepare_treatment_groups_report(treatment_result),
             self.prepare_patient_id_cross_table_report(patient_id_result),
@@ -474,7 +529,7 @@ class AnalysisReportService:
             generation_context=(
                 "Wygenerowano: "
                 f"{datetime.now().strftime('%Y-%m-%d %H:%M')}. "
-                "Raport łączy siedem modułów analizy automatycznej."
+                "Raport łączy osiem modułów analizy automatycznej."
             ),
             sections=sections,
             source_data_description=_build_combined_source_data_description(sections),

@@ -23,8 +23,10 @@ from vetstats_app.analysis.microbiology_results import (
     build_matching_details,
     build_summary_details,
 )
+from vetstats_app.analysis.chart_specs import build_microbiology_results_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.microbiology_results_service import MicrobiologyResultsService
+from vetstats_app.ui.analysis.chart_widgets import build_chart_section
 
 MODULE_TITLE = "Analiza wyników mikrobiologicznych"
 
@@ -117,6 +119,14 @@ class MicrobiologyResultsView(QWidget):
             _section_with_text(
                 "Dopasowanie wyniku mikrobiologicznego do wizyty",
                 build_matching_details(result),
+            )
+        )
+
+        content_layout.addWidget(
+            build_chart_section(
+                "Wykres wyników mikrobiologicznych",
+                build_microbiology_results_charts(result),
+                empty_message="Brak danych do wygenerowania wykresu wyników mikrobiologicznych.",
             )
         )
 

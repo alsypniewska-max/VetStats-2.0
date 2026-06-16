@@ -22,8 +22,10 @@ from vetstats_app.analysis.treatment_groups import (
     build_interpretation_summary,
     build_summary_details,
 )
+from vetstats_app.analysis.chart_specs import build_treatment_groups_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.treatment_groups_service import TreatmentGroupsService
+from vetstats_app.ui.analysis.chart_widgets import build_chart_section
 
 MODULE_TITLE = "Analiza leczenia w grupach pacjentów"
 
@@ -125,6 +127,13 @@ class TreatmentGroupsView(QWidget):
             _section_with_widget(
                 "Skuteczność leczenia wrzodów",
                 self._build_ulcer_success_section(result),
+            )
+        )
+        content_layout.addWidget(
+            build_chart_section(
+                "Wykresy leczenia",
+                build_treatment_groups_charts(result),
+                empty_message="Brak danych do wygenerowania wykresów leczenia.",
             )
         )
         content_layout.addWidget(

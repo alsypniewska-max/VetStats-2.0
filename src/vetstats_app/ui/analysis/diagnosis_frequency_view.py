@@ -21,8 +21,10 @@ from vetstats_app.analysis.diagnosis_frequency import (
     DiagnosisFrequencyResult,
     build_interpretation_summary,
 )
+from vetstats_app.analysis.chart_specs import build_diagnosis_frequency_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_frequency_service import DiagnosisFrequencyService
+from vetstats_app.ui.analysis.chart_widgets import build_chart_section
 
 
 def _configure_reference_table(table: QTableWidget) -> None:
@@ -88,10 +90,10 @@ class DiagnosisFrequencyView(QWidget):
         frequency_layout.addWidget(self._build_frequency_table(result))
         content_layout.addWidget(frequency_group)
 
-        chart_group = QGroupBox("Wykres częstości")
-        chart_layout = QVBoxLayout(chart_group)
-        chart_layout.addWidget(
-            QLabel("Placeholder: wykres częstości rozpoznań.")
+        chart_group = build_chart_section(
+            "Wykres częstości",
+            build_diagnosis_frequency_charts(result),
+            empty_message="Brak danych do wygenerowania wykresu częstości rozpoznań.",
         )
         content_layout.addWidget(chart_group)
 

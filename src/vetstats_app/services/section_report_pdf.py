@@ -1,22 +1,40 @@
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 import reportlab
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
+    Image,
+    NextPageTemplate,
+    PageBreak,
+    PageTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
+from vetstats_app.analysis.chart_models import AnalysisChartSpec
 from vetstats_app.analysis.report_models import (
     AnalysisSectionReport,
     CombinedAnalysisReport,
     ReportTableBlock,
 )
+from vetstats_app.services.analysis_chart_renderer import chart_spec_to_png_bytes
+
+_PAGE_MARGIN = 18 * mm
+_PORTRAIT_PAGE_SIZE = A4
+_LANDSCAPE_PAGE_SIZE = landscape(A4)
 
 
 def write_section_report_pdf(report: AnalysisSectionReport, destination: Path) -> None:
@@ -116,22 +134,52 @@ def write_combined_analysis_report_pdf(
             story.append(Paragraph(escape(f"• {section.section_title}"), styles["body"]))
 
     for index, section in enumerate(report.sections):
+        story.append(NextPageTemplate("portrait"))
         story.append(PageBreak())
         story.extend(_build_section_story(section, styles, font_name))
 
     doc.build(story)
 
 
-def _create_document(destination: Path, title: str) -> SimpleDocTemplate:
-    return SimpleDocTemplate(
+def _create_document(destination: Path, title: str) -> BaseDocTemplate:
+    doc = BaseDocTemplate(
         str(destination),
-        pagesize=A4,
-        leftMargin=18 * mm,
-        rightMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
+        pagesize=_PORTRAIT_PAGE_SIZE,
+        leftMargin=_PAGE_MARGIN,
+        rightMargin=_PAGE_MARGIN,
+        topMargin=_PAGE_MARGIN,
+        bottomMargin=_PAGE_MARGIN,
         title=title,
     )
+    portrait_frame = Frame(
+        _PAGE_MARGIN,
+        _PAGE_MARGIN,
+        _PORTRAIT_PAGE_SIZE[0] - (2 * _PAGE_MARGIN),
+        _PORTRAIT_PAGE_SIZE[1] - (2 * _PAGE_MARGIN),
+        id="portrait_frame",
+    )
+    landscape_frame = Frame(
+        _PAGE_MARGIN,
+        _PAGE_MARGIN,
+        _LANDSCAPE_PAGE_SIZE[0] - (2 * _PAGE_MARGIN),
+        _LANDSCAPE_PAGE_SIZE[1] - (2 * _PAGE_MARGIN),
+        id="landscape_frame",
+    )
+    doc.addPageTemplates(
+        [
+            PageTemplate(
+                id="portrait",
+                frames=[portrait_frame],
+                pagesize=_PORTRAIT_PAGE_SIZE,
+            ),
+            PageTemplate(
+                id="landscape",
+                frames=[landscape_frame],
+                pagesize=_LANDSCAPE_PAGE_SIZE,
+            ),
+        ]
+    )
+    return doc
 
 
 def _build_report_styles(font_name: str) -> dict[str, ParagraphStyle]:
@@ -206,7 +254,60 @@ def _build_section_story(
     for block in report.table_blocks:
         story.extend(_build_table_block_story(block, heading_style, body_style, font_name))
 
+    story.extend(_build_section_chart_story(report, heading_style, body_style))
     return story
+
+
+def _chart_spec_renderable(spec: AnalysisChartSpec) -> bool:
+    if spec.chart_type == "histogram":
+        return len(spec.values) >= 2
+    return spec.has_data
+
+
+def _build_section_chart_story(
+    report: AnalysisSectionReport,
+    heading_style: ParagraphStyle,
+    body_style: ParagraphStyle,
+) -> list:
+    renderable_charts = tuple(
+        chart for chart in report.chart_specs if _chart_spec_renderable(chart)
+    )
+    if not renderable_charts:
+        return []
+
+    story: list = [
+        NextPageTemplate("landscape"),
+        PageBreak(),
+        Paragraph(escape("Wykresy"), heading_style),
+    ]
+
+    for index, chart in enumerate(renderable_charts):
+        if index > 0:
+            story.append(PageBreak())
+        story.append(Paragraph(escape(chart.title), body_style))
+        story.append(Spacer(1, 6))
+        story.append(_build_chart_image(chart))
+
+    return story
+
+
+def _build_chart_image(chart: AnalysisChartSpec) -> Image:
+    png_bytes = chart_spec_to_png_bytes(
+        chart,
+        width_inches=9.0,
+        height_inches=5.0,
+        dpi=120,
+    )
+    image = Image(io.BytesIO(png_bytes))
+    max_width = _LANDSCAPE_PAGE_SIZE[0] - (2 * _PAGE_MARGIN)
+    max_height = _LANDSCAPE_PAGE_SIZE[1] - (2 * _PAGE_MARGIN) - (20 * mm)
+    aspect = image.imageHeight / image.imageWidth if image.imageWidth else 1.0
+    image.drawWidth = max_width
+    image.drawHeight = max_width * aspect
+    if image.drawHeight > max_height:
+        image.drawHeight = max_height
+        image.drawWidth = max_height / aspect
+    return image
 
 
 def _build_table_block_story(
@@ -232,7 +333,7 @@ def _build_table_block_story(
         table_data.append([""] * len(block.columns))
 
     column_count = len(block.columns)
-    available_width = A4[0] - 36 * mm
+    available_width = _PORTRAIT_PAGE_SIZE[0] - (2 * _PAGE_MARGIN)
     column_width = available_width / column_count
 
     table = Table(table_data, colWidths=[column_width] * column_count, repeatRows=1)

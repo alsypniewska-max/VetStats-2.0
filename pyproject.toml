@@ -12,6 +12,7 @@ dependencies = [
     "pandas>=2.0",
     "reportlab>=4.0",
     "PyQt6>=6.11",
+    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]

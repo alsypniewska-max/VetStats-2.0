@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+from vetstats_app.analysis.chart_models import AnalysisChartSpec
+
+
 @dataclass(frozen=True)
 class ReportTableBlock:
     title: str
@@ -17,6 +20,7 @@ class AnalysisSectionPayload:
     summary_details: str
     interpretation_summary: str
     table_blocks: tuple[ReportTableBlock, ...]
+    chart_specs: tuple[AnalysisChartSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,7 @@ class AnalysisSectionReport:
     summary_details: str
     interpretation_summary: str
     table_blocks: tuple[ReportTableBlock, ...]
+    chart_specs: tuple[AnalysisChartSpec, ...] = ()
     export_format: str = "pdf-placeholder"
 
     @property

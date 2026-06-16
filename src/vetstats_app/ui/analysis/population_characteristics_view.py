@@ -1,3 +1,4 @@
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -11,18 +12,55 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from vetstats_app.analysis.chart_specs import build_population_characteristics_charts
+from vetstats_app.analysis.population_characteristics import (
+    PopulationCharacteristicsResult,
+    build_interpretation_summary,
+    build_summary_details,
+)
+from vetstats_app.services.population_characteristics_service import (
+    PopulationCharacteristicsService,
+)
+from vetstats_app.ui.analysis.chart_widgets import build_chart_section
+
 MODULE_TITLE = "Charakterystyka populacji pacjentów"
 
-BASIC_COUNTS = [
-    ("Liczba pacjentów", "120"),
-    ("Liczba rekordów", "340"),
-    ("Liczba gatunków", "4"),
-]
+
+def _configure_reference_table(table: QTableWidget) -> None:
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    table.setSortingEnabled(False)
+    table.horizontalHeader().setSortIndicatorShown(False)
+
+
+def _build_counts_table(result: PopulationCharacteristicsResult) -> QTableWidget:
+    table = QTableWidget()
+    table.setColumnCount(2)
+    table.setHorizontalHeaderLabels(["Metryka", "Wartość"])
+    rows = [
+        ("Liczba pacjentów", str(result.total_patients)),
+        ("Liczba rekordów", str(result.total_records)),
+        ("Liczba gatunków", str(result.species_count)),
+    ]
+    table.setRowCount(len(rows))
+    _configure_reference_table(table)
+    table.horizontalHeader().setSectionResizeMode(
+        1, QHeaderView.ResizeMode.Stretch
+    )
+    for row_index, (metric, value) in enumerate(rows):
+        table.setItem(row_index, 0, QTableWidgetItem(metric))
+        table.setItem(row_index, 1, QTableWidgetItem(value))
+    return table
 
 
 class PopulationCharacteristicsView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+
+        self._result = PopulationCharacteristicsService().analyze()
+        result = self._result
+        charts = build_population_characteristics_charts(result)
 
         module_title = QLabel(MODULE_TITLE)
 
@@ -45,50 +83,27 @@ class PopulationCharacteristicsView(QWidget):
                 "na podstawie wczytanych danych."
             )
         )
+        summary_layout.addWidget(QLabel(build_summary_details(result)))
         content_layout.addWidget(summary_group)
 
         counts_group = QGroupBox("Podstawowe liczby")
         counts_layout = QVBoxLayout(counts_group)
-        counts_table = QTableWidget()
-        counts_table.setColumnCount(2)
-        counts_table.setHorizontalHeaderLabels(["Metryka", "Wartość"])
-        counts_table.setRowCount(len(BASIC_COUNTS))
-        counts_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        counts_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
-        for row, (metric, value) in enumerate(BASIC_COUNTS):
-            counts_table.setItem(row, 0, QTableWidgetItem(metric))
-            counts_table.setItem(row, 1, QTableWidgetItem(value))
-        counts_layout.addWidget(counts_table)
+        counts_layout.addWidget(_build_counts_table(result))
         content_layout.addWidget(counts_group)
 
-        species_chart_group = QGroupBox("Wykres: gatunki")
-        species_chart_layout = QVBoxLayout(species_chart_group)
-        species_chart_layout.addWidget(
-            QLabel("Placeholder: wykres rozkładu gatunków w populacji pacjentów.")
-        )
-        content_layout.addWidget(species_chart_group)
-
-        breed_chart_group = QGroupBox("Wykres: rasy w obrębie gatunku")
-        breed_chart_layout = QVBoxLayout(breed_chart_group)
-        breed_chart_layout.addWidget(
-            QLabel(
-                "Placeholder: wykres rozkładu ras w obrębie wybranego gatunku. "
-                "Analiza ras jest prezentowana w kontekście gatunku, "
-                "a nie globalnie dla wszystkich zwierząt."
+        content_layout.addWidget(
+            build_chart_section(
+                "Wykresy populacji",
+                charts,
+                empty_message=(
+                    "Brak danych do wygenerowania wykresów charakterystyki populacji."
+                ),
             )
         )
-        content_layout.addWidget(breed_chart_group)
 
         interpretation_group = QGroupBox("Interpretacja")
         interpretation_layout = QVBoxLayout(interpretation_group)
-        interpretation_layout.addWidget(
-            QLabel(
-                "Placeholder: krótka interpretacja opisowa charakterystyki populacji, "
-                "uwzględniająca rozkład gatunków oraz ras w obrębie poszczególnych gatunków."
-            )
-        )
+        interpretation_layout.addWidget(QLabel(build_interpretation_summary(result)))
         content_layout.addWidget(interpretation_group)
 
         scroll_area = QScrollArea()
