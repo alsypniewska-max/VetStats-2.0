@@ -24,6 +24,7 @@ from vetstats_app.analysis.diagnosis_frequency import (
     TYPE_OF_ULCER_COLUMN,
     normalize_ulcer_code,
 )
+from vetstats_app.analysis.display_text import sanitize_matplotlib_text
 from vetstats_app.analysis.report_models import ReportTableBlock
 
 UNKNOWN_VALUE = "xxx"
@@ -96,7 +97,7 @@ def _parse_clinical_date(value: object) -> datetime | None:
 def _normalize_bacteria(value: object) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
-    text = str(value).strip().lower()
+    text = sanitize_matplotlib_text(str(value).strip().lower())
     if not text or text == UNKNOWN_VALUE:
         return None
     return text

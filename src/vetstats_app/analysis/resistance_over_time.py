@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from vetstats_app.analysis.display_text import sanitize_matplotlib_text
 from vetstats_app.analysis.report_models import ReportTableBlock
 
 from data_sterilizer.schemas.micro import (
@@ -91,7 +92,7 @@ def _resolve_column(micro: pd.DataFrame, *candidates: str) -> str | None:
 def _normalize_bacteria(value: object) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
-    text = str(value).strip().lower()
+    text = sanitize_matplotlib_text(str(value).strip().lower())
     if not text or text == UNKNOWN_VALUE:
         return None
     return text

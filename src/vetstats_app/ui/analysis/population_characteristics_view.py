@@ -1,11 +1,13 @@
-from PyQt6.QtCore import Qt
+from pathlib import Path
+
 from PyQt6.QtWidgets import (
+    QFileDialog,
+    QMessageBox,
     QGroupBox,
-    QHBoxLayout,
     QHeaderView,
-    QLabel,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -18,17 +20,45 @@ from vetstats_app.analysis.population_characteristics import (
     build_interpretation_summary,
     build_summary_details,
 )
+from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.population_characteristics_service import (
     PopulationCharacteristicsService,
 )
+from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
+from vetstats_app.ui.analysis.interpretation_panel import (
+    build_interpretation_section,
+    build_wrapped_text_label,
+)
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
     finalize_reference_table,
-    stretch_column,
 )
+
+
+def _configure_population_table(table: QTableWidget) -> None:
+    configure_reference_table(table)
+    table.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+
+
+def _finalize_population_table(table: QTableWidget) -> None:
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    for column_index in range(table.columnCount()):
+        header.setSectionResizeMode(
+            column_index,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+
+    finalize_reference_table(table)
+
+    total_width = table.frameWidth() * 2
+    if table.verticalHeader().isVisible():
+        total_width += table.verticalHeader().width()
+    for column_index in range(table.columnCount()):
+        total_width += table.columnWidth(column_index)
+    table.setMaximumWidth(total_width)
 
 
 def _build_counts_table(result: PopulationCharacteristicsResult) -> QTableWidget:
@@ -41,12 +71,11 @@ def _build_counts_table(result: PopulationCharacteristicsResult) -> QTableWidget
         ("Liczba gatunków", str(result.species_count)),
     ]
     table.setRowCount(len(rows))
-    configure_reference_table(table)
-    stretch_column(table, 1)
+    _configure_population_table(table)
     for row_index, (metric, value) in enumerate(rows):
         table.setItem(row_index, 0, QTableWidgetItem(metric))
         table.setItem(row_index, 1, QTableWidgetItem(value))
-    finalize_reference_table(table)
+    _finalize_population_table(table)
     return table
 
 
@@ -55,6 +84,7 @@ class PopulationCharacteristicsView(QWidget):
         super().__init__(parent)
 
         self._result = PopulationCharacteristicsService().analyze()
+        self._report_service = AnalysisReportService()
         result = self._result
         charts = build_population_characteristics_charts(result)
 
@@ -65,18 +95,21 @@ class PopulationCharacteristicsView(QWidget):
             export_charts_button,
         )
 
+        generate_report_button.clicked.connect(self._on_generate_report)
+        export_charts_button.clicked.connect(self._on_export_charts)
+
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
         summary_group = QGroupBox("Podsumowanie")
         summary_layout = QVBoxLayout(summary_group)
         summary_layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 "Ta sekcja przedstawia ogólną charakterystykę populacji pacjentów "
                 "na podstawie wczytanych danych."
             )
         )
-        summary_layout.addWidget(QLabel(build_summary_details(result)))
+        summary_layout.addWidget(build_wrapped_text_label(build_summary_details(result)))
         content_layout.addWidget(summary_group)
 
         counts_group = QGroupBox("Podstawowe liczby")
@@ -108,3 +141,33 @@ class PopulationCharacteristicsView(QWidget):
 
     def action_bar_widget(self) -> QWidget:
         return self._action_bar_widget
+
+    def _on_generate_report(self) -> None:
+        destination, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Generuj raport",
+            "population_characteristics_report.pdf",
+            "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
+        )
+        if not destination:
+            return
+
+        error_message = self._report_service.export_population_characteristics_report_pdf(
+            self._result,
+            Path(destination),
+        )
+        if error_message is not None:
+            QMessageBox.warning(self, "Generuj raport", error_message)
+            return
+
+        QMessageBox.information(
+            self,
+            "Generuj raport",
+            f"Zapisano raport PDF do pliku:\n{destination}",
+        )
+
+    def _on_export_charts(self) -> None:
+        open_chart_export_dialog(
+            self,
+            build_population_characteristics_charts(self._result),
+        )

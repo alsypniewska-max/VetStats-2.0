@@ -1,15 +1,13 @@
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QGroupBox,
-    QHBoxLayout,
-    QHeaderView,
-    QLabel,
     QFileDialog,
-    QPushButton,
     QMessageBox,
+    QGroupBox,
+    QHeaderView,
+    QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -25,27 +23,53 @@ from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.patient_id_cross_table_summary_service import (
     PatientIdCrossTableSummaryService,
 )
-from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
+from vetstats_app.ui.analysis.interpretation_panel import (
+    build_interpretation_section,
+    build_wrapped_text_label,
+)
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
     finalize_reference_table,
-    stretch_column,
 )
 
 MODULE_TITLE = "Podsumowanie powiązań patient_ID między tabelami"
 
 
+def _configure_patient_id_table(table: QTableWidget) -> None:
+    configure_reference_table(table)
+    table.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+
+
+def _finalize_patient_id_table(table: QTableWidget) -> None:
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    for column_index in range(table.columnCount()):
+        header.setSectionResizeMode(
+            column_index,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+
+    finalize_reference_table(table)
+
+    total_width = table.frameWidth() * 2
+    if table.verticalHeader().isVisible():
+        total_width += table.verticalHeader().width()
+    for column_index in range(table.columnCount()):
+        total_width += table.columnWidth(column_index)
+    table.setMaximumWidth(total_width)
+
+
 def _section_with_text(title: str, text: str) -> QGroupBox:
     group = QGroupBox(title)
     layout = QVBoxLayout(group)
-    layout.addWidget(QLabel(text))
+    layout.addWidget(build_wrapped_text_label(text))
     return group
 
 
 def _build_table_counts_table(result: PatientIdCrossTableSummaryResult) -> QWidget:
     if not result.is_success:
-        return QLabel(
+        return build_wrapped_text_label(
             result.error_message
             or "Nie udało się obliczyć liczby unikalnych patient_ID."
         )
@@ -56,8 +80,7 @@ def _build_table_counts_table(result: PatientIdCrossTableSummaryResult) -> QWidg
         ["Tabela", "Źródło", "Unikalne patient_ID", "Wykluczone wiersze"]
     )
     table.setRowCount(len(result.tables))
-    configure_reference_table(table)
-    stretch_column(table, 1)
+    _configure_patient_id_table(table)
 
     for row_index, entry in enumerate(result.tables):
         table.setItem(row_index, 0, QTableWidgetItem(entry.table_name))
@@ -65,13 +88,13 @@ def _build_table_counts_table(result: PatientIdCrossTableSummaryResult) -> QWidg
         table.setItem(row_index, 2, QTableWidgetItem(str(entry.unique_patient_ids)))
         table.setItem(row_index, 3, QTableWidgetItem(str(entry.excluded_rows)))
 
-    finalize_reference_table(table)
+    _finalize_patient_id_table(table)
     return table
 
 
 def _build_pairwise_table(result: PatientIdCrossTableSummaryResult) -> QWidget:
     if not result.is_success:
-        return QLabel(
+        return build_wrapped_text_label(
             result.error_message
             or "Nie udało się obliczyć powiązań patient_ID między tabelami."
         )
@@ -88,9 +111,7 @@ def _build_pairwise_table(result: PatientIdCrossTableSummaryResult) -> QWidget:
         ]
     )
     table.setRowCount(len(result.pairwise))
-    configure_reference_table(table)
-    stretch_column(table, 0)
-    stretch_column(table, 1)
+    _configure_patient_id_table(table)
 
     for row_index, linkage in enumerate(result.pairwise):
         table.setItem(row_index, 0, QTableWidgetItem(linkage.table_a))
@@ -99,7 +120,7 @@ def _build_pairwise_table(result: PatientIdCrossTableSummaryResult) -> QWidget:
         table.setItem(row_index, 3, QTableWidgetItem(str(linkage.only_in_a)))
         table.setItem(row_index, 4, QTableWidgetItem(str(linkage.only_in_b)))
 
-    finalize_reference_table(table)
+    _finalize_patient_id_table(table)
     return table
 
 
@@ -124,13 +145,13 @@ class PatientIdCrossTableSummaryView(QWidget):
         summary_group = QGroupBox("Podsumowanie")
         summary_layout = QVBoxLayout(summary_group)
         summary_layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 "Moduł pokazuje automatyczne podsumowanie powiązań między tabelami "
                 "patient, clinical i micro na podstawie patient_ID. "
                 "To nie jest widok historii pojedynczego pacjenta."
             )
         )
-        summary_layout.addWidget(QLabel(build_summary_details(result)))
+        summary_layout.addWidget(build_wrapped_text_label(build_summary_details(result)))
         content_layout.addWidget(summary_group)
 
         content_layout.addWidget(

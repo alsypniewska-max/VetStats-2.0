@@ -5,7 +5,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QFileDialog,
     QPushButton,
     QMessageBox,
@@ -27,8 +26,12 @@ from vetstats_app.analysis.treatment_groups import (
 from vetstats_app.analysis.chart_specs import build_treatment_groups_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.treatment_groups_service import TreatmentGroupsService
+from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
+from vetstats_app.ui.analysis.interpretation_panel import (
+    build_interpretation_section,
+    build_wrapped_text_label,
+)
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
@@ -88,7 +91,7 @@ def _build_category_table(
     empty_message: str,
 ) -> QWidget:
     if not rows:
-        return QLabel(empty_message)
+        return build_wrapped_text_label(empty_message)
 
     table = QTableWidget()
     table.setColumnCount(4)
@@ -116,7 +119,7 @@ def _section_with_widget(title: str, widget: QWidget) -> QGroupBox:
 def _section_with_text(title: str, text: str) -> QGroupBox:
     group = QGroupBox(title)
     layout = QVBoxLayout(group)
-    layout.addWidget(QLabel(text))
+    layout.addWidget(build_wrapped_text_label(text))
     return group
 
 
@@ -136,6 +139,7 @@ class TreatmentGroupsView(QWidget):
         )
 
         generate_report_button.clicked.connect(self._on_generate_report)
+        export_charts_button.clicked.connect(self._on_export_charts)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -146,8 +150,8 @@ class TreatmentGroupsView(QWidget):
         )
         summary_group = QGroupBox("Podsumowanie")
         summary_layout = QVBoxLayout(summary_group)
-        summary_layout.addWidget(QLabel(summary_text))
-        summary_layout.addWidget(QLabel(build_summary_details(result)))
+        summary_layout.addWidget(build_wrapped_text_label(summary_text))
+        summary_layout.addWidget(build_wrapped_text_label(build_summary_details(result)))
         content_layout.addWidget(summary_group)
 
         content_layout.addWidget(_build_descriptive_stats_group(result))
@@ -216,13 +220,21 @@ class TreatmentGroupsView(QWidget):
             f"Zapisano raport PDF do pliku:\n{destination}",
         )
 
+    def _on_export_charts(self) -> None:
+        open_chart_export_dialog(
+            self,
+            build_treatment_groups_charts(self._result),
+        )
+
 
     def _build_pharmacology_section(self, result: TreatmentGroupsResult) -> QWidget:
         if not result.is_success:
-            return QLabel(result.error_message or "Nie udało się obliczyć podziału leczenia.")
+            return build_wrapped_text_label(
+                result.error_message or "Nie udało się obliczyć podziału leczenia."
+            )
 
         if result.pharmacology_included_cases == 0:
-            return QLabel(
+            return build_wrapped_text_label(
                 "Brak przypadków z prawidłowym kodem farmacology_surgery do analizy."
             )
 
@@ -230,7 +242,7 @@ class TreatmentGroupsView(QWidget):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 f"Przeanalizowano {result.pharmacology_included_cases} z {result.total_cases} "
                 f"przypadków; wykluczono {result.pharmacology_excluded_cases} wierszy "
                 f"z pustymi, xxx lub nieprawidłowymi kodami farmacology_surgery."
@@ -246,13 +258,13 @@ class TreatmentGroupsView(QWidget):
 
     def _build_topical_section(self, result: TreatmentGroupsResult) -> QWidget:
         if not result.is_success:
-            return QLabel(
+            return build_wrapped_text_label(
                 result.error_message
                 or "Nie udało się obliczyć analizy topical_systemic."
             )
 
         if result.topical_included_cases == 0:
-            return QLabel(
+            return build_wrapped_text_label(
                 "Brak przypadków z prawidłowym kodem topical_systemic do analizy."
             )
 
@@ -260,7 +272,7 @@ class TreatmentGroupsView(QWidget):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 f"Przeanalizowano {result.topical_included_cases} z {result.total_cases} "
                 f"przypadków; wykluczono {result.topical_excluded_cases} wierszy "
                 f"z pustymi, xxx lub nieprawidłowymi kodami topical_systemic."
@@ -276,14 +288,14 @@ class TreatmentGroupsView(QWidget):
 
     def _build_ulcer_success_section(self, result: TreatmentGroupsResult) -> QWidget:
         if not result.is_success:
-            return QLabel(
+            return build_wrapped_text_label(
                 result.error_message
                 or "Nie udało się obliczyć skuteczności leczenia wrzodów."
             )
 
         ulcer_success = result.ulcer_success
         if ulcer_success.eligible_cases == 0:
-            return QLabel(
+            return build_wrapped_text_label(
                 "Brak przypadków wrzodowych (type_of_ulcer inne niż x i xxx) "
                 "do oceny skuteczności leczenia."
             )
@@ -310,7 +322,7 @@ class TreatmentGroupsView(QWidget):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 "Skuteczność liczona tylko dla prawdziwych kategorii wrzodu "
                 "(s, e, p, n, m, sceed). Wiersze z how_ended = continuation "
                 "są wykluczone ze statystyki skuteczności."

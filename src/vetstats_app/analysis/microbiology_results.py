@@ -5,6 +5,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from vetstats_app.analysis.display_text import sanitize_matplotlib_text
 from vetstats_app.analysis.report_models import ReportTableBlock
 
 from data_sterilizer.schemas.clinical import (
@@ -84,7 +85,7 @@ def _parse_clinical_date(value: object) -> datetime | None:
 def _normalize_bacteria(value: object) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
-    text = str(value).strip().lower()
+    text = sanitize_matplotlib_text(str(value).strip().lower())
     if not text or text == UNKNOWN_VALUE:
         return None
     return text

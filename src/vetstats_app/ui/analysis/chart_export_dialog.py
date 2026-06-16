@@ -42,6 +42,15 @@ _EDIT_DIALOG_DEFAULT_WIDTH = 920
 _EDIT_DIALOG_DEFAULT_HEIGHT = 820
 _EDIT_DIALOG_MIN_WIDTH = 720
 _EDIT_DIALOG_MIN_HEIGHT = 680
+_EDIT_FIELD_MIN_HEIGHT = 32
+
+
+def _configure_edit_form_field(field: QLineEdit) -> None:
+    field.setSizePolicy(
+        QSizePolicy.Policy.Expanding,
+        QSizePolicy.Policy.Fixed,
+    )
+    field.setMinimumHeight(_EDIT_FIELD_MIN_HEIGHT)
 
 
 def open_chart_export_dialog(
@@ -239,10 +248,23 @@ class ChartExportEditDialog(QDialog):
         )
 
         edit_group = QGroupBox("Edycja wykresu")
+        edit_group.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Preferred,
+        )
         edit_form = QFormLayout(edit_group)
+        edit_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
+        edit_form.setFormAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
+        edit_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
         self._title_field = QLineEdit(chart.title)
         self._x_axis_field = QLineEdit(chart.x_axis_label)
         self._y_axis_field = QLineEdit(chart.y_axis_label)
+        for field in (self._title_field, self._x_axis_field, self._y_axis_field):
+            _configure_edit_form_field(field)
         edit_form.addRow("Tytuł wykresu:", self._title_field)
         edit_form.addRow("Opis osi X:", self._x_axis_field)
         edit_form.addRow("Opis osi Y:", self._y_axis_field)

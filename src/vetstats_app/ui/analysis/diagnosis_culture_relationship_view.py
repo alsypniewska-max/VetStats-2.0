@@ -28,6 +28,7 @@ from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_culture_relationship_service import (
     DiagnosisCultureRelationshipService,
 )
+from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
 from vetstats_app.ui.analysis.interpretation_panel import (
     build_interpretation_section,
@@ -170,6 +171,7 @@ class DiagnosisCultureRelationshipView(QWidget):
         )
 
         generate_report_button.clicked.connect(self._on_generate_report)
+        export_charts_button.clicked.connect(self._on_export_charts)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -259,6 +261,12 @@ class DiagnosisCultureRelationshipView(QWidget):
             self,
             "Generuj raport",
             f"Zapisano raport PDF do pliku:\n{destination}",
+        )
+
+    def _on_export_charts(self) -> None:
+        open_chart_export_dialog(
+            self,
+            build_diagnosis_culture_relationship_charts(self._result),
         )
 
     def _build_bacteria_section(self, result: DiagnosisCultureRelationshipResult) -> QWidget:

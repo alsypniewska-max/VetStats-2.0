@@ -10,6 +10,7 @@ from vetstats_app.analysis.chart_specs import (
     build_population_characteristics_charts,
     build_resistance_over_time_charts,
     build_treatment_groups_charts,
+    build_treatment_diagnosis_relationship_charts,
 )
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
@@ -51,11 +52,15 @@ from vetstats_app.analysis.procedure_diagnosis_relationship import (
 )
 from vetstats_app.analysis.treatment_diagnosis_relationship import (
     TreatmentDiagnosisRelationshipResult,
+    SECTION_TITLE as TREATMENT_DIAGNOSIS_SECTION_TITLE,
+    SUMMARY_RELATIONSHIP_TABLE_COLUMNS as TREATMENT_DIAGNOSIS_SUMMARY_COLUMNS,
+    build_descriptive_stats_block as build_treatment_diagnosis_descriptive_stats_block,
     build_interpretation_summary as build_treatment_diagnosis_interpretation,
     build_summary_details as build_treatment_diagnosis_summary_details,
     build_table_details as build_treatment_diagnosis_table_details,
     format_top_ulcer_categories,
     observed_treatment_categories,
+    treatment_display_label,
 )
 from vetstats_app.analysis.microbiology_results import (
     MicrobiologyResultsResult,
@@ -170,6 +175,14 @@ class AnalysisReportService:
         return self.build_section_report(
             self.build_population_characteristics_payload(result)
         )
+
+    def export_population_characteristics_report_pdf(
+        self,
+        result: PopulationCharacteristicsResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_population_characteristics_report(result)
+        return self.export_section_report_pdf(report, destination)
 
     def build_diagnosis_frequency_payload(
         self,
@@ -418,23 +431,33 @@ class AnalysisReportService:
         self,
         result: TreatmentDiagnosisRelationshipResult,
     ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_treatment_diagnosis_descriptive_stats_block(
+            result
+        )
         return AnalysisSectionPayload(
-            section_title="Powiązanie topical_systemic z type_of_ulcer",
+            section_title=TREATMENT_DIAGNOSIS_SECTION_TITLE,
             source_labels=(result.source_label,),
             summary_details=_build_treatment_diagnosis_summary_details(result),
             interpretation_summary=build_treatment_diagnosis_interpretation(result),
             table_blocks=(
+                descriptive_stats_block,
                 ReportTableBlock(
-                    title="Powiązanie topical_systemic z type_of_ulcer",
-                    columns=(
-                        "Kod topical_systemic",
-                        "Kategoria leczenia",
-                        "Liczba wierszy",
-                        "Najczęstsze kategorie type_of_ulcer",
-                    ),
+                    title=TREATMENT_DIAGNOSIS_SECTION_TITLE,
+                    columns=TREATMENT_DIAGNOSIS_SUMMARY_COLUMNS,
                     rows=_treatment_diagnosis_relationship_rows(result),
                 ),
+                ReportTableBlock(
+                    title="Szczegółowe pary leczenie — typ wrzodu",
+                    columns=(
+                        "Rodzaj leczenia",
+                        "Typ wrzodu",
+                        "Liczba wierszy",
+                        "Udział w typie wrzodu (%)",
+                    ),
+                    rows=_treatment_diagnosis_pair_rows(result),
+                ),
             ),
+            chart_specs=build_treatment_diagnosis_relationship_charts(result),
         )
 
     def prepare_treatment_diagnosis_relationship_report(
@@ -789,11 +812,28 @@ def _treatment_diagnosis_relationship_rows(
     return tuple(
         (
             category.code,
-            category.label,
+            treatment_display_label(category.code),
             str(category.clinical_rows),
             format_top_ulcer_categories(category.top_ulcer_categories),
         )
         for category in observed_treatment_categories(result)
+    )
+
+
+def _treatment_diagnosis_pair_rows(
+    result: TreatmentDiagnosisRelationshipResult,
+) -> tuple[tuple[str, ...], ...]:
+    if not result.is_success or result.included_cases == 0:
+        return ()
+    return tuple(
+        (
+            pair.treatment_label,
+            pair.ulcer_label,
+            str(pair.count),
+            f"{pair.ulcer_type_share_pct:.1f}",
+        )
+        for pair in result.treatment_ulcer_pairs
+        if pair.count > 0
     )
 
 

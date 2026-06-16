@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -28,8 +27,12 @@ from vetstats_app.analysis.microbiology_results import (
 from vetstats_app.analysis.chart_specs import build_microbiology_results_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.microbiology_results_service import MicrobiologyResultsService
+from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
+from vetstats_app.ui.analysis.interpretation_panel import (
+    build_interpretation_section,
+    build_wrapped_text_label,
+)
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
@@ -85,7 +88,9 @@ def _build_descriptive_stats_group(result: MicrobiologyResultsResult) -> QGroupB
 
 def _build_bacteria_table(rows: tuple[BacteriaFrequencyRow, ...]) -> QWidget:
     if not rows:
-        return QLabel("Brak dodatnich izolacji bakteryjnych w dopasowanych wynikach.")
+        return build_wrapped_text_label(
+            "Brak dodatnich izolacji bakteryjnych w dopasowanych wynikach."
+        )
 
     table = QTableWidget()
     table.setColumnCount(3)
@@ -112,7 +117,7 @@ def _section_with_widget(title: str, widget: QWidget) -> QGroupBox:
 def _section_with_text(title: str, text: str) -> QGroupBox:
     group = QGroupBox(title)
     layout = QVBoxLayout(group)
-    layout.addWidget(QLabel(text))
+    layout.addWidget(build_wrapped_text_label(text))
     return group
 
 
@@ -132,6 +137,7 @@ class MicrobiologyResultsView(QWidget):
         )
 
         generate_report_button.clicked.connect(self._on_generate_report)
+        export_charts_button.clicked.connect(self._on_export_charts)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -139,12 +145,12 @@ class MicrobiologyResultsView(QWidget):
         summary_group = QGroupBox("Podsumowanie")
         summary_layout = QVBoxLayout(summary_group)
         summary_layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 "Moduł przedstawia wyniki mikrobiologiczne: częstotliwość bakterii, "
                 "wyniki negatywne oraz dopasowanie wyników micro do wizyt clinical."
             )
         )
-        summary_layout.addWidget(QLabel(build_summary_details(result)))
+        summary_layout.addWidget(build_wrapped_text_label(build_summary_details(result)))
         content_layout.addWidget(summary_group)
 
         content_layout.addWidget(_build_descriptive_stats_group(result))
@@ -210,22 +216,30 @@ class MicrobiologyResultsView(QWidget):
             f"Zapisano raport PDF do pliku:\n{destination}",
         )
 
+    def _on_export_charts(self) -> None:
+        open_chart_export_dialog(
+            self,
+            build_microbiology_results_charts(self._result),
+        )
+
 
     def _build_bacteria_section(self, result: MicrobiologyResultsResult) -> QWidget:
         if not result.is_success:
-            return QLabel(
+            return build_wrapped_text_label(
                 result.error_message
                 or "Nie udało się obliczyć wyników mikrobiologicznych."
             )
 
         if result.matching.matched_pairs == 0:
-            return QLabel("Brak dopasowanych par clinical–micro do analizy bakterii.")
+            return build_wrapped_text_label(
+                "Brak dopasowanych par clinical–micro do analizy bakterii."
+            )
 
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 f"Dodatnie izolacje: {result.included_isolates}. "
                 f"Wyniki negatywne: {result.negative_count} "
                 f"({result.negative_percentage:.1f}% ważnych obserwacji bakteryjnych). "

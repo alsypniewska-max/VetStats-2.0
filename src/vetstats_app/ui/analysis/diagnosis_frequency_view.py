@@ -3,7 +3,6 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -26,8 +25,12 @@ from vetstats_app.analysis.diagnosis_frequency import (
 from vetstats_app.analysis.chart_specs import build_diagnosis_frequency_charts
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.diagnosis_frequency_service import DiagnosisFrequencyService
+from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-from vetstats_app.ui.analysis.interpretation_panel import build_interpretation_section
+from vetstats_app.ui.analysis.interpretation_panel import (
+    build_interpretation_section,
+    build_wrapped_text_label,
+)
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
@@ -95,6 +98,7 @@ class DiagnosisFrequencyView(QWidget):
         )
 
         generate_report_button.clicked.connect(self._on_generate_report)
+        export_charts_button.clicked.connect(self._on_export_charts)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -102,12 +106,14 @@ class DiagnosisFrequencyView(QWidget):
         summary_group = QGroupBox("Podsumowanie")
         summary_layout = QVBoxLayout(summary_group)
         summary_layout.addWidget(
-            QLabel(
+            build_wrapped_text_label(
                 "Moduł przedstawia analizę częstości rozpoznań na podstawie tabeli "
                 "clinical oraz pola type_of_ulcer."
             )
         )
-        summary_layout.addWidget(QLabel(self._build_summary_details(result)))
+        summary_layout.addWidget(
+            build_wrapped_text_label(self._build_summary_details(result))
+        )
         content_layout.addWidget(summary_group)
 
         content_layout.addWidget(_build_descriptive_stats_group(result))
@@ -177,6 +183,12 @@ class DiagnosisFrequencyView(QWidget):
             f"Zapisano raport PDF do pliku:\n{destination}",
         )
 
+    def _on_export_charts(self) -> None:
+        open_chart_export_dialog(
+            self,
+            build_diagnosis_frequency_charts(self._result),
+        )
+
 
     def _build_summary_details(self, result: DiagnosisFrequencyResult) -> str:
         if not result.is_success:
@@ -191,10 +203,14 @@ class DiagnosisFrequencyView(QWidget):
 
     def _build_frequency_table(self, result: DiagnosisFrequencyResult) -> QWidget:
         if not result.is_success:
-            return QLabel(result.error_message or "Nie udało się obliczyć częstości rozpoznań.")
+            return build_wrapped_text_label(
+                result.error_message or "Nie udało się obliczyć częstości rozpoznań."
+            )
 
         if result.included_cases == 0:
-            return QLabel("Brak przypadków z prawidłowym kodem type_of_ulcer do analizy.")
+            return build_wrapped_text_label(
+                "Brak przypadków z prawidłowym kodem type_of_ulcer do analizy."
+            )
 
         table = QTableWidget()
         table.setColumnCount(4)

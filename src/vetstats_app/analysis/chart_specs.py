@@ -23,6 +23,10 @@ from vetstats_app.analysis.resistance_over_time import (
     YearlyResistanceSummary,
 )
 from vetstats_app.analysis.treatment_groups import TreatmentCategoryRow, TreatmentGroupsResult
+from vetstats_app.analysis.treatment_diagnosis_relationship import (
+    TreatmentDiagnosisRelationshipResult,
+    observed_treatment_categories,
+)
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -462,6 +466,62 @@ def build_procedure_diagnosis_relationship_charts(
                 legend_note=format_procedure_code_legend(
                     pair.procedure_code for pair in top_pairs
                 ),
+            )
+        )
+
+    return tuple(charts)
+
+
+def build_treatment_diagnosis_relationship_charts(
+    result: TreatmentDiagnosisRelationshipResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success or result.included_cases == 0:
+        return ()
+
+    charts: list[AnalysisChartSpec] = []
+
+    observed_categories = observed_treatment_categories(result)
+    if observed_categories:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="treatment_diagnosis_treatment_distribution",
+                title="Rozkład kategorii leczenia",
+                chart_type="bar",
+                labels=tuple(category.label for category in observed_categories),
+                values=tuple(float(category.clinical_rows) for category in observed_categories),
+                x_axis_label="Rodzaj leczenia",
+                y_axis_label="Liczba wierszy",
+            )
+        )
+
+    if result.included_ulcer_counts:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="treatment_diagnosis_ulcer_overall",
+                title="Najczęstsze typy wrzodu ogółem",
+                chart_type="bar",
+                labels=tuple(row.label for row in result.included_ulcer_counts),
+                values=tuple(float(row.count) for row in result.included_ulcer_counts),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Liczba wierszy",
+                orientation="horizontal",
+            )
+        )
+
+    if result.treatment_ulcer_pairs:
+        top_pairs = result.treatment_ulcer_pairs[:8]
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="treatment_diagnosis_treatment_ulcer_pairs",
+                title="Najczęstsze pary leczenie — typ wrzodu",
+                chart_type="bar",
+                labels=tuple(
+                    f"{pair.treatment_label} — {pair.ulcer_label}" for pair in top_pairs
+                ),
+                values=tuple(float(pair.count) for pair in top_pairs),
+                x_axis_label="Para leczenie — typ wrzodu",
+                y_axis_label="Liczba wierszy",
+                orientation="horizontal",
             )
         )
 

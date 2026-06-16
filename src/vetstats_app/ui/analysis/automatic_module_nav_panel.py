@@ -10,7 +10,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Analiza oporności bakterii w czasie",
     "Powiązanie rozpoznań z posiewem",
     "Analiza zależności między zabiegiem a rozpoznaniem",
-    "Powiązanie topical_systemic z type_of_ulcer",
+    "Powiązanie leczenia z typem wrzodu",
     "Powiązania patient_ID między tabelami",
 ]
 

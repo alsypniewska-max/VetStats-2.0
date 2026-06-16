@@ -27,6 +27,7 @@ from vetstats_app.analysis.resistance_over_time import (
 )
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.resistance_over_time_service import ResistanceOverTimeService
+from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
 from vetstats_app.ui.analysis.interpretation_panel import (
     build_interpretation_section,
@@ -180,6 +181,7 @@ class ResistanceOverTimeView(QWidget):
         )
 
         generate_report_button.clicked.connect(self._on_generate_report)
+        export_charts_button.clicked.connect(self._on_export_charts)
 
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
@@ -267,4 +269,10 @@ class ResistanceOverTimeView(QWidget):
             self,
             "Generuj raport",
             f"Zapisano raport PDF do pliku:\n{destination}",
+        )
+
+    def _on_export_charts(self) -> None:
+        open_chart_export_dialog(
+            self,
+            build_resistance_over_time_charts(self._result),
         )

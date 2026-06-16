@@ -16,7 +16,7 @@ DIAGNOSIS_CODE_MAPPING: list[tuple[str, str]] = [
     ("n", "neurotrophic"),
     ("m", "melting"),
     ("sceed", "SCEED"),
-    ("x", "other"),
+    ("x", "other (non ulcer)"),
 ]
 
 DIAGNOSIS_LABELS: dict[str, str] = dict(DIAGNOSIS_CODE_MAPPING)
