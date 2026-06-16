@@ -53,6 +53,62 @@ def write_combined_analysis_report_pdf(
         Paragraph(escape(report.generation_context), styles["body"]),
     ]
 
+    if report.source_data_description:
+        story.extend(
+            [
+                Spacer(1, 6),
+                Paragraph(escape("Opis źródeł danych"), styles["heading"]),
+                Paragraph(escape(report.source_data_description), styles["body"]),
+            ]
+        )
+
+    if report.applied_filters:
+        story.extend(
+            [
+                Spacer(1, 4),
+                Paragraph(escape("Zastosowane filtry"), styles["heading"]),
+                Paragraph(escape(report.applied_filters), styles["body"]),
+            ]
+        )
+
+    if report.dataset_dimensions:
+        story.extend(
+            [
+                Spacer(1, 4),
+                Paragraph(escape("Wymiary zbiorów danych"), styles["heading"]),
+                Paragraph(escape(report.dataset_dimensions), styles["body"]),
+            ]
+        )
+
+    if report.verbal_analysis_summary:
+        story.extend(
+            [
+                Spacer(1, 4),
+                Paragraph(escape("Podsumowanie werbalne"), styles["heading"]),
+                Paragraph(escape(report.verbal_analysis_summary), styles["body"]),
+            ]
+        )
+
+    if report.section_overview_rows:
+        story.extend(
+            [
+                Spacer(1, 4),
+                Paragraph(escape("Przegląd sekcji raportu"), styles["heading"]),
+            ]
+        )
+        story.extend(
+            _build_table_block_story(
+                ReportTableBlock(
+                    title="",
+                    columns=("Sekcja", "Tabele", "Wiersze w tabelach"),
+                    rows=report.section_overview_rows,
+                ),
+                styles["heading"],
+                styles["body"],
+                font_name,
+            )
+        )
+
     if report.sections:
         story.append(Spacer(1, 8))
         story.append(Paragraph(escape("Zawarte sekcje"), styles["heading"]))
@@ -159,9 +215,9 @@ def _build_table_block_story(
     body_style: ParagraphStyle,
     font_name: str,
 ) -> list:
-    story: list = [
-        Paragraph(escape(block.title), heading_style),
-    ]
+    story: list = []
+    if block.title:
+        story.append(Paragraph(escape(block.title), heading_style))
 
     if not block.columns:
         story.append(Paragraph(escape("brak kolumn"), body_style))

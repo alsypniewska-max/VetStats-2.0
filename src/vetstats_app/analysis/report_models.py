@@ -42,3 +42,8 @@ class CombinedAnalysisReport:
     report_title: str
     generation_context: str
     sections: tuple[AnalysisSectionReport, ...]
+    source_data_description: str = ""
+    applied_filters: str = ""
+    dataset_dimensions: str = ""
+    verbal_analysis_summary: str = ""
+    section_overview_rows: tuple[tuple[str, ...], ...] = ()

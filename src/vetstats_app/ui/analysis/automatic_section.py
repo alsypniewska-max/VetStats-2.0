@@ -44,7 +44,7 @@ class AutomaticAnalysisSection(QWidget):
         title_label = QLabel("Analiza automatyczna")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        combined_report_button = QPushButton("Generuj raport zbiorczy")
+        combined_report_button = QPushButton("Generuj raport końcowy")
         combined_report_button.clicked.connect(self._on_generate_combined_report)
 
         header = QHBoxLayout()
@@ -78,22 +78,22 @@ class AutomaticAnalysisSection(QWidget):
     def _on_generate_combined_report(self) -> None:
         destination, _selected_filter = QFileDialog.getSaveFileName(
             self,
-            "Generuj raport zbiorczy",
-            "automatic_analysis_report.pdf",
+            "Generuj raport końcowy",
+            "final_automatic_analysis_report.pdf",
             "Pliki PDF (*.pdf);;Wszystkie pliki (*.*)",
         )
         if not destination:
             return
 
-        error_message = self._report_service.export_combined_automatic_analysis_report_pdf(
+        error_message = self._report_service.export_final_automatic_analysis_report_pdf(
             Path(destination),
         )
         if error_message is not None:
-            QMessageBox.warning(self, "Generuj raport zbiorczy", error_message)
+            QMessageBox.warning(self, "Generuj raport końcowy", error_message)
             return
 
         QMessageBox.information(
             self,
-            "Generuj raport zbiorczy",
+            "Generuj raport końcowy",
             f"Zapisano raport PDF do pliku:\n{destination}",
         )

@@ -48,6 +48,9 @@ from vetstats_app.analysis.microbiology_results import (
 )
 from datetime import datetime
 
+from data_sterilizer.config import DEFAULT_INPUT_DIR, DEFAULT_OUTPUT_DIR, sterile_output_name
+from data_sterilizer.io.loader import load_csv
+
 from vetstats_app.analysis.report_models import (
     AnalysisSectionPayload,
     AnalysisSectionReport,
@@ -456,23 +459,35 @@ class AnalysisReportService:
         procedure_diagnosis_result = ProcedureDiagnosisRelationshipService().analyze()
         treatment_diagnosis_result = TreatmentDiagnosisRelationshipService().analyze()
 
+        sections = (
+            self.prepare_diagnosis_frequency_report(diagnosis_result),
+            self.prepare_treatment_groups_report(treatment_result),
+            self.prepare_patient_id_cross_table_report(patient_id_result),
+            self.prepare_microbiology_results_report(microbiology_result),
+            self.prepare_diagnosis_culture_relationship_report(diagnosis_culture_result),
+            self.prepare_procedure_diagnosis_relationship_report(procedure_diagnosis_result),
+            self.prepare_treatment_diagnosis_relationship_report(treatment_diagnosis_result),
+        )
+
         return CombinedAnalysisReport(
-            report_title="Raport analizy automatycznej",
+            report_title="Raport końcowy analizy automatycznej",
             generation_context=(
                 "Wygenerowano: "
                 f"{datetime.now().strftime('%Y-%m-%d %H:%M')}. "
                 "Raport łączy siedem modułów analizy automatycznej."
             ),
-            sections=(
-                self.prepare_diagnosis_frequency_report(diagnosis_result),
-                self.prepare_treatment_groups_report(treatment_result),
-                self.prepare_patient_id_cross_table_report(patient_id_result),
-                self.prepare_microbiology_results_report(microbiology_result),
-                self.prepare_diagnosis_culture_relationship_report(diagnosis_culture_result),
-                self.prepare_procedure_diagnosis_relationship_report(procedure_diagnosis_result),
-                self.prepare_treatment_diagnosis_relationship_report(treatment_diagnosis_result),
-            ),
+            sections=sections,
+            source_data_description=_build_combined_source_data_description(sections),
+            applied_filters=_build_combined_applied_filters(),
+            dataset_dimensions=_build_combined_dataset_dimensions(),
+            verbal_analysis_summary=_build_combined_verbal_analysis_summary(sections),
+            section_overview_rows=_build_combined_section_overview_rows(sections),
         )
+
+    def prepare_final_automatic_analysis_report(
+        self,
+    ) -> CombinedAnalysisReport:
+        return self.prepare_combined_automatic_analysis_report()
 
     def export_combined_automatic_analysis_report_pdf(
         self,
@@ -484,6 +499,111 @@ class AnalysisReportService:
         except OSError as exc:
             return f"Nie udało się zapisać raportu PDF: {exc}"
         return None
+
+    def export_final_automatic_analysis_report_pdf(
+        self,
+        destination: Path,
+    ) -> str | None:
+        return self.export_combined_automatic_analysis_report_pdf(destination)
+
+
+def _resolve_dataset_path(dataset_name: str) -> Path | None:
+    candidates = (
+        DEFAULT_OUTPUT_DIR / sterile_output_name(dataset_name),
+        DEFAULT_INPUT_DIR / dataset_name,
+    )
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _build_combined_source_data_description(
+    sections: tuple[AnalysisSectionReport, ...],
+) -> str:
+    labels: list[str] = []
+    for section in sections:
+        for label in section.source_labels:
+            if label not in labels:
+                labels.append(label)
+
+    if not labels:
+        return "Brak zidentyfikowanych plików źródłowych."
+
+    dataset_paths = []
+    for dataset_name in ("patient.csv", "clinical.csv", "micro.csv"):
+        path = _resolve_dataset_path(dataset_name)
+        if path is not None:
+            dataset_paths.append(f"{dataset_name} → {path.name}")
+
+    parts = [
+        "Raport korzysta z wyników modułów analizy automatycznej na danych "
+        "wstępnie oczyszczonych (Sterile_data lub Data_to_check).",
+        f"Wykorzystane etykiety źródeł w sekcjach: {', '.join(labels)}.",
+    ]
+    if dataset_paths:
+        parts.append(f"Mapowanie tabel: {'; '.join(dataset_paths)}.")
+    return " ".join(parts)
+
+
+def _build_combined_applied_filters() -> str:
+    return (
+        "Filtry są stosowane przez istniejące moduły analizy — raport końcowy "
+        "nie wprowadza dodatkowych reguł. Wspólne wykluczenia obejmują: wartości "
+        "puste i xxx, nieprawidłowe kody pól klinicznych (type_of_ulcer, "
+        "topical_systemic, type_of_surgery, pharmacology_surgery), nieprawidłowe "
+        "patient_ID oraz w modułach łączących clinical z micro — wiersze bez "
+        "dopasowanej pary patient_ID. Szczegóły wykluczeń dla każdego modułu "
+        "znajdują się w podsumowaniu danej sekcji."
+    )
+
+
+def _build_combined_dataset_dimensions() -> str:
+    parts: list[str] = []
+    for dataset_name in ("patient.csv", "clinical.csv", "micro.csv"):
+        path = _resolve_dataset_path(dataset_name)
+        if path is None:
+            parts.append(f"{dataset_name}: brak pliku.")
+            continue
+        frame = load_csv(path)
+        parts.append(
+            f"{path.name}: {len(frame)} wierszy, {len(frame.columns)} kolumn "
+            f"({', '.join(str(column) for column in frame.columns)})."
+        )
+    return " ".join(parts)
+
+
+def _build_combined_verbal_analysis_summary(
+    sections: tuple[AnalysisSectionReport, ...],
+) -> str:
+    if not sections:
+        return "Brak sekcji do podsumowania."
+
+    parts = [
+        "Poniżej skrót interpretacji poszczególnych modułów wchodzących w skład "
+        "raportu końcowego. Pełne tabele i opisy znajdują się w kolejnych sekcjach."
+    ]
+    for section in sections:
+        interpretation = section.interpretation_summary.strip()
+        if interpretation:
+            parts.append(f"{section.section_title}: {interpretation}")
+        else:
+            parts.append(f"{section.section_title}: brak interpretacji.")
+    return " ".join(parts)
+
+
+def _build_combined_section_overview_rows(
+    sections: tuple[AnalysisSectionReport, ...],
+) -> tuple[tuple[str, ...], ...]:
+    return tuple(
+        (
+            section.section_title,
+            str(section.table_count),
+            str(section.row_count),
+        )
+        for section in sections
+    )
+
 
 def _procedure_diagnosis_relationship_rows(
     result: ProcedureDiagnosisRelationshipResult,
