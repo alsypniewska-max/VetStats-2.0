@@ -24,6 +24,7 @@ from vetstats_app.analysis.resistance_over_time import (
     build_inclusion_details,
     build_interpretation_summary,
     build_summary_details,
+    resistance_relevant_sensitivity_total,
 )
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.resistance_over_time_service import ResistanceOverTimeService
@@ -124,17 +125,29 @@ def _build_sensitivity_table(result: ResistanceOverTimeResult) -> QWidget:
         return build_wrapped_text_label("Brak obserwacji do analizy wrażliwości.")
 
     table = QTableWidget()
-    table.setColumnCount(4)
-    table.setHorizontalHeaderLabels(["Rok", "+++", "+", "0"])
+    table.setColumnCount(7)
+    table.setHorizontalHeaderLabels(
+        ["Rok", "+++", "+++ (%)", "+", "+ (%)", "0", "0 (%)"]
+    )
     table.setRowCount(len(result.yearly_summaries))
     _configure_resistance_table(table)
 
     for row_index, summary in enumerate(result.yearly_summaries):
         table.setItem(row_index, 0, QTableWidgetItem(str(summary.year)))
         counts = {row.code: row.count for row in summary.sensitivity_counts}
+        valid_observations = resistance_relevant_sensitivity_total(summary)
+
+        def _percentage_text(code: str) -> str:
+            if valid_observations <= 0:
+                return "—"
+            return f"{counts.get(code, 0) / valid_observations * 100.0:.1f}"
+
         table.setItem(row_index, 1, QTableWidgetItem(str(counts.get("+++", 0))))
-        table.setItem(row_index, 2, QTableWidgetItem(str(counts.get("+", 0))))
-        table.setItem(row_index, 3, QTableWidgetItem(str(counts.get("0", 0))))
+        table.setItem(row_index, 2, QTableWidgetItem(_percentage_text("+++")))
+        table.setItem(row_index, 3, QTableWidgetItem(str(counts.get("+", 0))))
+        table.setItem(row_index, 4, QTableWidgetItem(_percentage_text("+")))
+        table.setItem(row_index, 5, QTableWidgetItem(str(counts.get("0", 0))))
+        table.setItem(row_index, 6, QTableWidgetItem(_percentage_text("0")))
 
     _finalize_resistance_table(table)
 

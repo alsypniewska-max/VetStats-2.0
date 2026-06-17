@@ -21,6 +21,7 @@ from vetstats_app.analysis.resistance_over_time import (
     SENSITIVITY_CATEGORY_MAPPING,
     ResistanceOverTimeResult,
     YearlyResistanceSummary,
+    resistance_relevant_sensitivity_total,
 )
 from vetstats_app.analysis.treatment_groups import TreatmentCategoryRow, TreatmentGroupsResult
 from vetstats_app.analysis.treatment_diagnosis_relationship import (
@@ -274,20 +275,23 @@ def build_resistance_over_time_charts(
     resistance_labels: list[str] = []
     resistance_values: list[float] = []
     for summary in result.yearly_summaries:
+        valid_observations = resistance_relevant_sensitivity_total(summary)
+        if valid_observations <= 0:
+            continue
         resistant = _yearly_resistance_count(summary, "0")
-        if summary.included_observations > 0 or resistant > 0:
-            resistance_labels.append(str(summary.year))
-            resistance_values.append(float(resistant))
-    if resistance_labels and any(value > 0 for value in resistance_values):
+        resistance_rate = resistant / valid_observations * 100.0
+        resistance_labels.append(str(summary.year))
+        resistance_values.append(resistance_rate)
+    if resistance_labels:
         charts.append(
             AnalysisChartSpec(
                 chart_id="resistance_zero_trend",
-                title="Trend oporności (0) według roku",
+                title="Trend oporności według roku",
                 chart_type="bar",
                 labels=tuple(resistance_labels),
                 values=tuple(resistance_values),
                 x_axis_label="Rok",
-                y_axis_label="Liczba obserwacji oporności (0)",
+                y_axis_label="Odsetek oporności (0) [%]",
             )
         )
 

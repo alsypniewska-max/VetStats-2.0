@@ -1,4 +1,5 @@
-from PyQt6.QtWidgets import QStackedWidget, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
 from vetstats_app.ui.analysis.diagnosis_culture_relationship_view import (
     DiagnosisCultureRelationshipView,
@@ -42,6 +43,13 @@ class AutomaticAnalysisSection(QWidget):
         for view in module_views:
             self._module_stack.addWidget(view)
             self._action_bar_stack.addWidget(view.action_bar_widget())
+            for scroll_area in view.findChildren(QScrollArea):
+                scroll_area.setVerticalScrollBarPolicy(
+                    Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+                )
+                scroll_area.setHorizontalScrollBarPolicy(
+                    Qt.ScrollBarPolicy.ScrollBarAsNeeded
+                )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
