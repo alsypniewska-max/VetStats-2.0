@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 
 import pandas as pd
 
@@ -12,6 +13,15 @@ from data_sterilizer.schemas.patient import (
     GENDER_COLUMN,
     OTHER_DISEASES_OPHT_COLUMN,
     PATIENT_ID_COLUMN,
+)
+from vetstats_app.analysis.diagnosis_frequency import DIAGNOSIS_LABELS
+from vetstats_app.analysis.procedure_diagnosis_relationship import (
+    PROCEDURE_DISPLAY_LABELS,
+)
+from vetstats_app.analysis.report_models import AnalysisSectionReport, ReportTableBlock
+from vetstats_app.analysis.treatment_groups import (
+    FARMACOLOGY_SURGERY_MAPPING,
+    TOPICAL_SYSTEMIC_MAPPING,
 )
 from vetstats_app.analysis.patient_id_cross_table_summary import normalize_patient_id
 
@@ -244,6 +254,41 @@ MICRO_DISPLAY_COLUMNS: tuple[str, ...] = (
     "growth",
 )
 
+EYE_DISPLAY_MAP: dict[str, str] = {
+    "l": "lewe",
+    "r": "prawe",
+    "b": "oba oczy",
+}
+
+HOW_ENDED_DISPLAY_MAP: dict[str, str] = {
+    "good": "wyleczono",
+    "continuation": "brak poprawy, kontynuowano leczenie",
+    "enucleation": "usunięto oko",
+    "no followup": "brak dalszej obserwacji",
+}
+
+GROWTH_DISPLAY_MAP: dict[str, str] = {
+    "heavy": "liczny wzrost",
+    "scant": "nieliczny wzrost",
+}
+
+DURATION_UNIT_MAP: dict[str, str] = {
+    "day": "dni",
+    "days": "dni",
+    "week": "tygodnie",
+    "weeks": "tygodnie",
+    "month": "miesiące",
+    "months": "miesiące",
+    "monts": "miesiące",
+    "year": "lata",
+    "years": "lata",
+}
+
+_FARMACOLOGY_SURGERY_LABELS: dict[str, str] = dict(FARMACOLOGY_SURGERY_MAPPING)
+_TOPICAL_SYSTEMIC_LABELS: dict[str, str] = dict(TOPICAL_SYSTEMIC_MAPPING)
+NEGATIVE_MICRO_RESULT = "negative"
+NOT_APPLICABLE_CODE = "x"
+
 
 @dataclass(frozen=True)
 class PatientListEntry:
@@ -278,6 +323,9 @@ class PatientHistoryDetail:
     micro_columns: tuple[str, ...]
     micro_rows: tuple[tuple[str, ...], ...]
     summary: str
+    age_text: str = UNKNOWN_LABEL
+    clinical_summary_lines: tuple[str, ...] = ()
+    micro_summary_lines: tuple[str, ...] = ()
 
 
 def format_display_value(value: object) -> str:
@@ -383,6 +431,274 @@ def _rows_for_table(
     return available_columns, tuple(rows)
 
 
+def _polish_plural(count: int, one: str, few: str, many: str) -> str:
+    count = abs(count)
+    if count == 1:
+        return one
+    if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14:
+        return few
+    return many
+
+
+def _parse_dmy_date(value: object) -> date | None:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return None
+    parts = text.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _compute_age_text(value: object, *, today: date | None = None) -> str:
+    born = _parse_dmy_date(value)
+    if born is None:
+        return UNKNOWN_LABEL
+    today = today or date.today()
+    if born > today:
+        return UNKNOWN_LABEL
+
+    years = today.year - born.year
+    months = today.month - born.month
+    if today.day < born.day:
+        months -= 1
+    if months < 0:
+        years -= 1
+        months += 12
+
+    years_text = f"{years} {_polish_plural(years, 'rok', 'lata', 'lat')}"
+    months_text = f"{months} {_polish_plural(months, 'miesiąc', 'miesiące', 'miesięcy')}"
+    return f"{years_text}, {months_text}"
+
+
+def _eye_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    return EYE_DISPLAY_MAP.get(text.lower(), text)
+
+
+def _how_ended_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    return HOW_ENDED_DISPLAY_MAP.get(text.lower(), text)
+
+
+def _ulcer_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    code = text.lower()
+    if code == NOT_APPLICABLE_CODE:
+        return "brak wrzodu / inny problem"
+    return DIAGNOSIS_LABELS.get(code, text)
+
+
+def _duration_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    normalized = text.replace(",", ".")
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s+([a-zA-Z]+)\s*", normalized)
+    if match is None:
+        return text
+    number, unit = match.group(1), match.group(2).lower()
+    unit_pl = DURATION_UNIT_MAP.get(unit)
+    if unit_pl is None:
+        return text
+    if number.endswith(".0"):
+        number = number[:-2]
+    return f"{number} {unit_pl}"
+
+
+def _farmacology_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    return _FARMACOLOGY_SURGERY_LABELS.get(text.lower(), text)
+
+
+def _topical_systemic_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    code = text.lower()
+    if code == NOT_APPLICABLE_CODE:
+        return "brak danych"
+    return _TOPICAL_SYSTEMIC_LABELS.get(code, text)
+
+
+def _surgery_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    if text.lower() == NOT_APPLICABLE_CODE:
+        return "brak zabiegu"
+    parts = [part.strip() for part in text.split(";") if part.strip()]
+    resolved = [PROCEDURE_DISPLAY_LABELS.get(part.lower(), part) for part in parts]
+    return ", ".join(resolved) if resolved else UNKNOWN_LABEL
+
+
+def _growth_text(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return UNKNOWN_LABEL
+    code = text.lower()
+    if code == NOT_APPLICABLE_CODE:
+        return "nie określono"
+    return GROWTH_DISPLAY_MAP.get(code, text)
+
+
+def _matched_patient_rows(
+    frame: pd.DataFrame,
+    normalized_id: str,
+) -> pd.DataFrame | None:
+    patient_id_col = _resolve_column(frame, "patient_ID")
+    if patient_id_col is None:
+        return None
+    return frame[
+        frame[patient_id_col].map(
+            lambda value: _matches_normalized_patient_id(value, normalized_id)
+        )
+    ]
+
+
+def _build_clinical_summary_lines(
+    clinical: pd.DataFrame,
+    normalized_id: str,
+) -> tuple[str, ...]:
+    matched = _matched_patient_rows(clinical, normalized_id)
+    if matched is None or matched.empty:
+        return ("Brak powiązanych wierszy clinical dla tego pacjenta.",)
+
+    resolved = {name: _resolve_column(clinical, name) for name in CLINICAL_DISPLAY_COLUMNS}
+    lines = [f"Liczba wierszy clinical: {len(matched)}."]
+    for index, (_, row) in enumerate(matched.iterrows(), start=1):
+        def value_of(name: str) -> object:
+            actual = resolved.get(name)
+            return row[actual] if actual is not None else None
+
+        eye = _eye_text(value_of("eye"))
+        ulcer = _ulcer_text(value_of("type_of_ulcer"))
+        first_visit = format_display_value(
+            value_of("date_appointment_first_before_micro")
+        )
+        duration = _duration_text(value_of("duration_of_problem"))
+        farmacology = _farmacology_text(value_of("farmacology_surgery"))
+        topical = _topical_systemic_text(value_of("topical_systemic"))
+        surgery = _surgery_text(value_of("type_of_surgery"))
+        how_ended = _how_ended_text(value_of("how_ended"))
+        lines.append(
+            f"Wizyta {index}: oko {eye}; rozpoznanie: {ulcer}; "
+            f"pierwsza wizyta: {first_visit}; czas trwania problemu przed wizytą "
+            f"okulistyczną: {duration}; leczenie: {farmacology}, {topical}; "
+            f"zabieg: {surgery}; zakończenie: {how_ended}."
+        )
+    return tuple(lines)
+
+
+def _build_micro_summary_lines(
+    micro: pd.DataFrame,
+    normalized_id: str,
+) -> tuple[str, ...]:
+    matched = _matched_patient_rows(micro, normalized_id)
+    if matched is None or matched.empty:
+        return ("Brak powiązanych wymazów micro dla tego pacjenta.",)
+
+    resolved = {name: _resolve_column(micro, name) for name in MICRO_DISPLAY_COLUMNS}
+
+    def value_of(row: pd.Series, name: str) -> object:
+        actual = resolved.get(name)
+        return row[actual] if actual is not None else None
+
+    grouped: dict[str, list[pd.Series]] = {}
+    order: list[str] = []
+    for _, row in matched.iterrows():
+        result_id = format_display_value(value_of(row, "result_ID"))
+        if result_id not in grouped:
+            grouped[result_id] = []
+            order.append(result_id)
+        grouped[result_id].append(row)
+
+    lines = [f"Liczba wymazów (result_ID): {len(order)}."]
+    for result_id in order:
+        rows = grouped[result_id]
+        first = rows[0]
+        collected = format_display_value(value_of(first, "date_collect"))
+        resulted = format_display_value(value_of(first, "date_result"))
+
+        organisms: list[str] = []
+        for row in rows:
+            bacteria = format_display_value(value_of(row, "bacteria"))
+            if bacteria != UNKNOWN_LABEL and bacteria.lower() == NEGATIVE_MICRO_RESULT:
+                organisms.append("nie zaobserwowano wzrostu bakterii")
+            else:
+                organisms.append(f"{bacteria} — {_growth_text(value_of(row, 'growth'))}")
+
+        if len(organisms) == 1:
+            organism_text = organisms[0]
+        else:
+            count_word = _polish_plural(
+                len(organisms), "drobnoustrój", "drobnoustroje", "drobnoustrojów"
+            )
+            organism_text = f"{len(organisms)} {count_word}: " + "; ".join(organisms)
+
+        lines.append(
+            f"Wymaz {result_id}: pobranie {collected}, wynik {resulted}: {organism_text}."
+        )
+    return tuple(lines)
+
+
+def build_patient_history_section_report(
+    detail: PatientHistoryDetail,
+    *,
+    source_labels: tuple[str, ...] = (),
+) -> AnalysisSectionReport:
+    table_blocks: list[ReportTableBlock] = [
+        ReportTableBlock(
+            title="Dane pacjenta",
+            columns=("Pole", "Wartość"),
+            rows=tuple((field.label, field.value) for field in detail.patient_fields),
+        )
+    ]
+    if detail.clinical_columns:
+        table_blocks.append(
+            ReportTableBlock(
+                title="Powiązane wiersze clinical",
+                columns=detail.clinical_columns,
+                rows=detail.clinical_rows,
+            )
+        )
+    if detail.micro_columns:
+        table_blocks.append(
+            ReportTableBlock(
+                title="Powiązane wiersze micro",
+                columns=detail.micro_columns,
+                rows=detail.micro_rows,
+            )
+        )
+
+    summary_details = "Podsumowanie clinical. " + " ".join(
+        detail.clinical_summary_lines
+    )
+    interpretation_summary = "Podsumowanie micro. " + " ".join(
+        detail.micro_summary_lines
+    )
+
+    return AnalysisSectionReport(
+        section_title=f"Historia pacjenta {detail.patient_id}",
+        source_labels=tuple(source_labels),
+        summary_details=summary_details,
+        interpretation_summary=interpretation_summary,
+        table_blocks=tuple(table_blocks),
+    )
+
+
 def build_patient_history_detail(
     patient_id: str,
     patient: pd.DataFrame,
@@ -420,6 +736,24 @@ def build_patient_history_detail(
             )
         )
 
+    dob_column = _resolve_column(patient, DATE_OF_BIRTH_COLUMN)
+    age_text = (
+        _compute_age_text(patient_row[dob_column])
+        if dob_column is not None
+        else UNKNOWN_LABEL
+    )
+    age_field = PatientFieldRow(
+        field_name="patient_age",
+        label="Wiek pacjenta",
+        value=age_text,
+    )
+    insert_index = len(patient_fields)
+    for position, field in enumerate(patient_fields):
+        if field.field_name == DATE_OF_BIRTH_COLUMN:
+            insert_index = position + 1
+            break
+    patient_fields.insert(insert_index, age_field)
+
     clinical_columns, clinical_rows = _rows_for_table(
         clinical,
         patient_id=normalized_id,
@@ -430,6 +764,9 @@ def build_patient_history_detail(
         patient_id=normalized_id,
         columns=MICRO_DISPLAY_COLUMNS,
     )
+
+    clinical_summary_lines = _build_clinical_summary_lines(clinical, normalized_id)
+    micro_summary_lines = _build_micro_summary_lines(micro, normalized_id)
 
     summary = (
         f"Historia indywidualna pacjenta {normalized_id}: "
@@ -444,4 +781,7 @@ def build_patient_history_detail(
         micro_columns=micro_columns,
         micro_rows=micro_rows,
         summary=summary,
+        age_text=age_text,
+        clinical_summary_lines=clinical_summary_lines,
+        micro_summary_lines=micro_summary_lines,
     )

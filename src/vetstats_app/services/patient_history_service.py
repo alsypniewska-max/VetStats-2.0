@@ -11,7 +11,9 @@ from vetstats_app.analysis.patient_history import (
     PatientHistoryDetail,
     build_patient_history_catalog,
     build_patient_history_detail,
+    build_patient_history_section_report,
 )
+from vetstats_app.services.section_report_pdf import write_section_report_pdf
 
 
 class PatientHistoryService:
@@ -58,6 +60,21 @@ class PatientHistoryService:
             self._clinical,
             self._micro,
         )
+
+    def export_patient_history_pdf(
+        self,
+        detail: PatientHistoryDetail,
+        destination: Path,
+    ) -> str | None:
+        report = build_patient_history_section_report(
+            detail,
+            source_labels=tuple(self._source_labels.values()),
+        )
+        try:
+            write_section_report_pdf(report, Path(destination))
+        except OSError as exc:
+            return f"Nie udało się zapisać raportu PDF: {exc}"
+        return None
 
     def _load_datasets(self) -> None:
         missing: list[str] = []

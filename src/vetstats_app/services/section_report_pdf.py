@@ -324,24 +324,51 @@ def _build_table_block_story(
         story.append(Paragraph(escape("brak kolumn"), body_style))
         return story
 
-    table_data = [list(block.columns)]
+    column_count = len(block.columns)
+
+    header_cell_style = ParagraphStyle(
+        "TableHeaderCell",
+        parent=body_style,
+        fontName=font_name,
+        fontSize=8.5,
+        leading=10.5,
+        spaceAfter=0,
+        textColor=colors.black,
+    )
+    body_cell_style = ParagraphStyle(
+        "TableBodyCell",
+        parent=body_style,
+        fontName=font_name,
+        fontSize=8.5,
+        leading=10.5,
+        spaceAfter=0,
+    )
+
+    def _cell(text: object, style: ParagraphStyle) -> Paragraph:
+        return Paragraph(escape(str(text)), style)
+
+    raw_rows: list[tuple[str, ...]] = []
     if block.rows:
         for row in block.rows:
-            padded = list(row) + [""] * (len(block.columns) - len(row))
-            table_data.append(list(padded[: len(block.columns)]))
+            padded = list(row) + [""] * (column_count - len(row))
+            raw_rows.append(tuple(padded[:column_count]))
     else:
-        table_data.append([""] * len(block.columns))
+        raw_rows.append(tuple([""] * column_count))
 
-    column_count = len(block.columns)
+    table_data = [[_cell(col, header_cell_style) for col in block.columns]]
+    for row in raw_rows:
+        table_data.append([_cell(value, body_cell_style) for value in row])
+
     available_width = _PORTRAIT_PAGE_SIZE[0] - (2 * _PAGE_MARGIN)
-    column_width = available_width / column_count
+    column_widths = _proportional_column_widths(
+        block.columns, raw_rows, available_width
+    )
 
-    table = Table(table_data, colWidths=[column_width] * column_count, repeatRows=1)
+    table = Table(table_data, colWidths=column_widths, repeatRows=1)
     table.setStyle(
         TableStyle(
             [
                 ("FONTNAME", (0, 0), (-1, -1), font_name),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8EEF5")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
@@ -359,10 +386,38 @@ def _build_table_block_story(
     return story
 
 
+def _proportional_column_widths(
+    columns: tuple[str, ...],
+    rows: list[tuple[str, ...]],
+    available_width: float,
+) -> list[float]:
+    column_count = len(columns)
+    max_lengths: list[int] = []
+    for column_index in range(column_count):
+        longest = len(str(columns[column_index]))
+        for row in rows:
+            if column_index < len(row):
+                longest = max(longest, len(str(row[column_index])))
+        max_lengths.append(max(longest, 1))
+
+    total_length = sum(max_lengths)
+    min_width = available_width * 0.07
+    raw_widths = [available_width * (length / total_length) for length in max_lengths]
+    clamped = [max(width, min_width) for width in raw_widths]
+    scale = available_width / sum(clamped)
+    return [width * scale for width in clamped]
+
+
 def _register_unicode_font() -> str:
     fonts_dir = Path(reportlab.__file__).resolve().parent / "fonts"
     candidates = (
         ("DejaVuSans", fonts_dir / "DejaVuSans.ttf"),
+        ("DejaVuSans", Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")),
+        ("ArialUnicode", Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf")),
+        ("ArialUnicode", Path("/Library/Fonts/Arial Unicode.ttf")),
+        ("Arial", Path("/System/Library/Fonts/Supplemental/Arial.ttf")),
+        ("Arial", Path("C:/Windows/Fonts/arial.ttf")),
+        ("DejaVuSans", Path("/usr/share/fonts/dejavu/DejaVuSans.ttf")),
         ("Vera", fonts_dir / "Vera.ttf"),
     )
     for font_name, font_path in candidates:
