@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import pandas as pd
@@ -23,9 +25,205 @@ PATIENT_FIELD_LABELS: tuple[tuple[str, str], ...] = (
     ("species", "Gatunek"),
     ("breed", "Rasa"),
     (GENDER_COLUMN, "Płeć"),
-    (DISEASES_NOT_OPHT_COLUMN, "Choroby poza okulistyką"),
-    (OTHER_DISEASES_OPHT_COLUMN, "Inne choroby okulistyczne"),
+    (DISEASES_NOT_OPHT_COLUMN, "Inne problemy nie okulistyczne"),
+    (OTHER_DISEASES_OPHT_COLUMN, "Inne problemy okulistyczne"),
 )
+
+GENDER_DISPLAY_MAP: dict[str, str] = {"m": "samiec", "f": "samica"}
+
+DISEASES_NOT_OPHT_NAME_MAP: dict[str, str] = {
+    "x": "brak",
+    "xxx": "nie wiadomo",
+    "otitis": "zapalenie ucha",
+    "alergy": "alergia",
+    "alergy skin": "alergia skórna",
+    "reflux": "refluks",
+    "heart": "problemy z sercem",
+    "pancreatitis": "zapalenie trzustki",
+    "hypothyroidism": "niedoczynność tarczycy",
+    "gastric": "problemy żołądkowo-jelitowe",
+    "diabetes": "cukrzyca",
+    "atrial complex": "zespół przedsionkowy",
+    "skin problems": "problemy dermatologiczne",
+    "facial nerve paralysis l": "porażenie nerwów twarzowych L",
+    "facial nerve paralysis r": "porażenie nerwów twarzowych P",
+    "facial nerve paralysis b": "porażenie nerwów twarzowych obustronne",
+}
+
+OPHTHALMIC_SIDE_LR: dict[str, str] = {"l": "L", "r": "P"}
+
+
+@dataclass(frozen=True)
+class _OphthalmicDiseaseSpec:
+    base: str
+    both_word: str
+    location_map: dict[str, str] | None = None
+
+
+OPHTHALMIC_DISEASE_SPECS: dict[str, _OphthalmicDiseaseSpec] = {
+    "cataract": _OphthalmicDiseaseSpec("zaćma", "obustronna"),
+    "kcs": _OphthalmicDiseaseSpec("KCS", "obustronne"),
+    "conjunctivitis": _OphthalmicDiseaseSpec("zapalenie spojówek", "obustronne"),
+    "bollous keratopathy": _OphthalmicDiseaseSpec(
+        "keratopatia pęcherzowa", "obustronna"
+    ),
+    "sequestrum": _OphthalmicDiseaseSpec("martwak", "obustronnie"),
+    "calcium dystrophy": _OphthalmicDiseaseSpec(
+        "dystrofia wapniowa rogówki", "obustronna"
+    ),
+    "trichiasis": _OphthalmicDiseaseSpec(
+        "trichiasis",
+        "obustronne",
+        {
+            "lower": "powiek dolnych",
+            "upper": "powiek górnych",
+            "both": "powiek górnych i dolnych",
+        },
+    ),
+    "distichiasis": _OphthalmicDiseaseSpec(
+        "dwurzędowość rzęs",
+        "obustronna",
+        {
+            "lower": "powiek dolnych",
+            "upper": "powiek górnych",
+            "both": "powiek górnych i dolnych",
+        },
+    ),
+    "entropium": _OphthalmicDiseaseSpec(
+        "entropium powiek",
+        "obustronne",
+        {"lower": "dolnych", "upper": "górnych", "both": "górnych i dolnych"},
+    ),
+    "ectropium": _OphthalmicDiseaseSpec(
+        "ectropium powiek",
+        "obustronne",
+        {"lower": "dolnych", "upper": "górnych", "both": "górnych i dolnych"},
+    ),
+}
+
+# Longest keys first so multi-word names match before any shorter prefix.
+_OPHTHALMIC_DISEASE_KEYS: tuple[str, ...] = tuple(
+    sorted(OPHTHALMIC_DISEASE_SPECS, key=len, reverse=True)
+)
+
+
+def _format_first_name(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL or not text:
+        return text
+    return text[:1].upper() + text[1:]
+
+
+def _format_gender(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return text
+    return GENDER_DISPLAY_MAP.get(text.lower(), text)
+
+
+def _format_semicolon_name_list(value: object, name_map: dict[str, str]) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return text
+    parts = [part.strip() for part in text.split(";")]
+    resolved = [name_map.get(part, part) for part in parts if part]
+    if not resolved:
+        return UNKNOWN_LABEL
+    return ", ".join(resolved)
+
+
+def _resolve_no_eye(lowered: str) -> str | None:
+    match = re.fullmatch(r"no\s+([lrb])\s+eyes?", lowered)
+    if match is None:
+        return None
+    side = match.group(1)
+    if side == "b":
+        return "brak obu oczu"
+    if side == "l":
+        return "brak lewego oka"
+    return "brak prawego oka"
+
+
+def _parse_ophthalmic_location(words: list[str]) -> str | None:
+    if words == ["lower"]:
+        return "lower"
+    if words == ["upper"]:
+        return "upper"
+    if sorted(words) == ["lower", "upper"]:
+        return "both"
+    return None
+
+
+def _build_ophthalmic_value(
+    spec: _OphthalmicDiseaseSpec,
+    remainder: str,
+) -> str | None:
+    words = remainder.split()
+
+    side: str | None = None
+    if words and words[-1] in ("l", "r", "b"):
+        side = words[-1]
+        words = words[:-1]
+
+    location: str | None = None
+    if words:
+        if spec.location_map is None:
+            return None
+        location = _parse_ophthalmic_location(words)
+        if location is None:
+            return None
+
+    parts = [spec.base]
+    if location is not None and spec.location_map is not None:
+        parts.append(spec.location_map[location])
+    if side is not None:
+        parts.append(spec.both_word if side == "b" else OPHTHALMIC_SIDE_LR[side])
+    return " ".join(parts)
+
+
+def _resolve_ophthalmic_token(token: str) -> str:
+    lowered = token.lower()
+    if lowered == "x":
+        return "brak"
+    if lowered == UNKNOWN_VALUE:
+        return UNKNOWN_LABEL
+
+    no_eye = _resolve_no_eye(lowered)
+    if no_eye is not None:
+        return no_eye
+
+    for key in _OPHTHALMIC_DISEASE_KEYS:
+        if lowered == key or lowered.startswith(key + " "):
+            resolved = _build_ophthalmic_value(
+                OPHTHALMIC_DISEASE_SPECS[key],
+                lowered[len(key):].strip(),
+            )
+            if resolved is not None:
+                return resolved
+            break
+
+    return token
+
+
+def _format_ophthalmic_disease_list(value: object) -> str:
+    text = format_display_value(value)
+    if text == UNKNOWN_LABEL:
+        return text
+    parts = [part.strip() for part in text.split(";")]
+    resolved = [_resolve_ophthalmic_token(part) for part in parts if part]
+    if not resolved:
+        return UNKNOWN_LABEL
+    return ", ".join(resolved)
+
+
+PATIENT_FIELD_VALUE_FORMATTERS: dict[str, Callable[[object], str]] = {
+    "name": _format_first_name,
+    GENDER_COLUMN: _format_gender,
+    DISEASES_NOT_OPHT_COLUMN: lambda value: _format_semicolon_name_list(
+        value, DISEASES_NOT_OPHT_NAME_MAP
+    ),
+    OTHER_DISEASES_OPHT_COLUMN: _format_ophthalmic_disease_list,
+}
 
 CLINICAL_DISPLAY_COLUMNS: tuple[str, ...] = (
     "eye",
@@ -213,11 +411,12 @@ def build_patient_history_detail(
         if field_name not in patient_row.index and _resolve_column(patient, field_name) is None:
             continue
         column = field_name if field_name in patient_row.index else _resolve_column(patient, field_name)
+        formatter = PATIENT_FIELD_VALUE_FORMATTERS.get(field_name, format_display_value)
         patient_fields.append(
             PatientFieldRow(
                 field_name=field_name,
                 label=label,
-                value=format_display_value(patient_row[column]),
+                value=formatter(patient_row[column]),
             )
         )
 
