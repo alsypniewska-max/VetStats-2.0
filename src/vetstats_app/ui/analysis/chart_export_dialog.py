@@ -169,22 +169,18 @@ class ChartExportOverviewDialog(QDialog):
 
     def _on_edit(self) -> None:
         settings = self._settings_panel.settings()
-        for index, chart in enumerate(self._charts, start=1):
-            edit_dialog = ChartExportEditDialog(
-                chart,
-                chart_index=index,
-                chart_count=len(self._charts),
-                settings=settings,
-                parent=self,
-            )
-            if edit_dialog.exec() != QDialog.DialogCode.Accepted:
-                return
+        edit_dialog = ChartExportEditDialog(
+            self._charts,
+            settings=settings,
+            parent=self,
+        )
+        if edit_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
 
         QMessageBox.information(
             self,
             "Eksport wykresów",
-            f"Zapisano {len(self._charts)} wykresów "
-            f"w formacie {_FORMAT_LABELS[settings.file_format]} (DPI {settings.dpi}).",
+            f"Zapisano {edit_dialog.saved_count} z {len(self._charts)} wykresów",
         )
         self.accept()
 
@@ -215,16 +211,16 @@ class ChartExportOverviewDialog(QDialog):
 class ChartExportEditDialog(QDialog):
     def __init__(
         self,
-        chart: AnalysisChartSpec,
+        charts: tuple[AnalysisChartSpec, ...],
         *,
-        chart_index: int,
-        chart_count: int,
         settings: ChartExportSettings,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._chart = chart
+        self._charts = charts
         self._settings = settings
+        self._current_index = 0
+        self._saved_count = 0
 
         self.setWindowTitle("Edycja wykresu przed eksportem")
         self.resize(_EDIT_DIALOG_DEFAULT_WIDTH, _EDIT_DIALOG_DEFAULT_HEIGHT)
@@ -233,15 +229,19 @@ class ChartExportEditDialog(QDialog):
         refresh_button = QPushButton("Odśwież podgląd")
         refresh_button.clicked.connect(self._refresh_preview)
 
-        save_and_continue_button = QPushButton("Zapisz i przejdź dalej")
-        save_and_continue_button.clicked.connect(self._on_save_and_continue)
+        self._skip_button = QPushButton("Pomiń")
+        self._skip_button.clicked.connect(self._on_skip)
+
+        self._save_button = QPushButton("Zapisz i przejdź dalej")
+        self._save_button.clicked.connect(self._on_save_and_continue)
 
         top_actions = QHBoxLayout()
         top_actions.addWidget(refresh_button)
         top_actions.addStretch()
-        top_actions.addWidget(save_and_continue_button)
+        top_actions.addWidget(self._skip_button)
+        top_actions.addWidget(self._save_button)
 
-        progress_label = QLabel(f"Wykres {chart_index} z {chart_count}")
+        self._progress_label = QLabel()
 
         settings_info = QLabel(
             f"Format: {_FORMAT_LABELS[settings.file_format]} | DPI: {settings.dpi}"
@@ -260,9 +260,9 @@ class ChartExportEditDialog(QDialog):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
         )
         edit_form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        self._title_field = QLineEdit(chart.title)
-        self._x_axis_field = QLineEdit(chart.x_axis_label)
-        self._y_axis_field = QLineEdit(chart.y_axis_label)
+        self._title_field = QLineEdit()
+        self._x_axis_field = QLineEdit()
+        self._y_axis_field = QLineEdit()
         for field in (self._title_field, self._x_axis_field, self._y_axis_field):
             _configure_edit_form_field(field)
         edit_form.addRow("Tytuł wykresu:", self._title_field)
@@ -294,18 +294,49 @@ class ChartExportEditDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(top_actions)
-        layout.addWidget(progress_label)
+        layout.addWidget(self._progress_label)
         layout.addWidget(settings_info)
         layout.addWidget(edit_group)
         layout.addWidget(preview_group, stretch=1)
 
+        self._load_current_chart()
+
+    @property
+    def saved_count(self) -> int:
+        return self._saved_count
+
+    def _current_chart(self) -> AnalysisChartSpec:
+        return self._charts[self._current_index]
+
+    def _is_last_chart(self) -> bool:
+        return self._current_index >= len(self._charts) - 1
+
+    def _load_current_chart(self) -> None:
+        chart = self._current_chart()
+        self._title_field.setText(chart.title)
+        self._x_axis_field.setText(chart.x_axis_label)
+        self._y_axis_field.setText(chart.y_axis_label)
+        self._progress_label.setText(
+            f"Wykres {self._current_index + 1} z {len(self._charts)}"
+        )
+        self._save_button.setText(
+            "Zapisz i zakończ" if self._is_last_chart() else "Zapisz i przejdź dalej"
+        )
         self._refresh_preview()
 
+    def _advance_or_finish(self) -> None:
+        if self._is_last_chart():
+            self.accept()
+            return
+        self._current_index += 1
+        self._load_current_chart()
+
     def _edited_spec(self) -> AnalysisChartSpec:
+        chart = self._current_chart()
         title = self._title_field.text().strip()
         return replace(
-            self._chart,
-            title=title if title else self._chart.title,
+            chart,
+            title=title if title else chart.title,
             x_axis_label=self._x_axis_field.text().strip(),
             y_axis_label=self._y_axis_field.text().strip(),
         )
@@ -318,7 +349,11 @@ class ChartExportEditDialog(QDialog):
                 widget.deleteLater()
         self._preview_layout.addWidget(create_chart_widget(self._edited_spec()))
 
+    def _on_skip(self) -> None:
+        self._advance_or_finish()
+
     def _on_save_and_continue(self) -> None:
+        chart = self._current_chart()
         title = self._title_field.text().strip()
         if not title:
             QMessageBox.warning(self, "Edycja wykresu", "Tytuł wykresu nie może być pusty.")
@@ -330,7 +365,7 @@ class ChartExportEditDialog(QDialog):
             y_axis_label=self._y_axis_field.text(),
         )
 
-        default_name = f"{self._chart.chart_id}.{self._settings.file_format}"
+        default_name = f"{chart.chart_id}.{self._settings.file_format}"
         file_filter = _save_file_filter(self._settings.file_format)
         destination, _selected_filter = QFileDialog.getSaveFileName(
             self,
@@ -342,7 +377,7 @@ class ChartExportEditDialog(QDialog):
             return
 
         error_message = export_single_chart(
-            self._chart,
+            chart,
             self._settings,
             Path(destination),
             overrides=overrides,
@@ -351,7 +386,8 @@ class ChartExportEditDialog(QDialog):
             QMessageBox.warning(self, "Edycja wykresu", error_message)
             return
 
-        self.accept()
+        self._saved_count += 1
+        self._advance_or_finish()
 
 
 def _save_file_filter(file_format: str) -> str:
