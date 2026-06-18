@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
-from data_sterilizer.config import PROJECT_ROOT
 from vetstats_app.analysis.logs import (
     LogEntry,
     LogsCatalog,
     build_logs_catalog,
+    build_logs_section_report,
     write_logs_csv,
-    write_logs_report,
 )
-
-VETSTATS_LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
-PROJECT_LOGS_DIR = PROJECT_ROOT / "logs"
+from vetstats_app.services.app_event_logger import APP_LOG_FILE, log_error, log_info
+from vetstats_app.services.section_report_pdf import write_section_report_pdf
 
 
 class LogsService:
@@ -33,6 +32,10 @@ class LogsService:
             )
         return self._catalog
 
+    def reload_catalog(self) -> LogsCatalog:
+        self._load_catalog()
+        return self.load_catalog()
+
     def get_load_error(self) -> str | None:
         return self._load_error
 
@@ -45,24 +48,47 @@ class LogsService:
         catalog = self.load_catalog()
         return catalog.entries
 
-    def export_report(self, destination: Path) -> str | None:
+    def export_pdf(self, destination: Path) -> str | None:
         entries = self.get_all_entries()
         if not entries:
             return "Brak wpisów logów do wyeksportowania."
+
+        exported_at = datetime.now()
+        report = build_logs_section_report(
+            entries,
+            source_labels=tuple(self._source_labels()),
+            exported_at=exported_at,
+        )
         try:
-            write_logs_report(entries, destination)
+            write_section_report_pdf(report, Path(destination))
         except OSError as exc:
-            return f"Nie udało się zapisać raportu logów: {exc}"
+            message = f"Nie udało się zapisać raportu PDF logów: {exc}"
+            log_error("logs", message)
+            return message
+
+        log_info(
+            "logs",
+            f"Eksport logów do PDF: {Path(destination).name} ({len(entries)} wpisy)",
+        )
         return None
 
     def export_csv(self, destination: Path) -> str | None:
         entries = self.get_all_entries()
         if not entries:
             return "Brak wpisów logów do wyeksportowania."
+
+        exported_at = datetime.now()
         try:
-            write_logs_csv(entries, destination)
+            write_logs_csv(entries, destination, exported_at=exported_at)
         except OSError as exc:
-            return f"Nie udało się zapisać pliku CSV: {exc}"
+            message = f"Nie udało się zapisać pliku CSV: {exc}"
+            log_error("logs", message)
+            return message
+
+        log_info(
+            "logs",
+            f"Eksport logów do CSV: {Path(destination).name} ({len(entries)} wpisy)",
+        )
         return None
 
     def _load_catalog(self) -> None:
@@ -78,37 +104,19 @@ class LogsService:
         else:
             self._load_error = None
 
+    def _source_labels(self) -> list[str]:
+        if self._source_paths:
+            return [path.name for path in self._source_paths]
+        if APP_LOG_FILE.is_file():
+            return [APP_LOG_FILE.name]
+        return []
+
     def _resolve_source_paths(self) -> tuple[Path, ...]:
         if self._logs_dir is not None:
-            return self._collect_log_files(self._logs_dir)
+            candidate = self._logs_dir / "app.log"
+            return (candidate,) if candidate.is_file() else ()
 
-        primary_dir = VETSTATS_LOGS_DIR
-        primary_files = self._collect_log_files(primary_dir)
-        if primary_files:
-            return primary_files
-
-        if PROJECT_LOGS_DIR.is_dir():
-            return self._collect_log_files(PROJECT_LOGS_DIR)
+        if APP_LOG_FILE.is_file():
+            return (APP_LOG_FILE,)
 
         return ()
-
-    @staticmethod
-    def _collect_log_files(directory: Path) -> tuple[Path, ...]:
-        if not directory.is_dir():
-            return ()
-
-        preferred = (
-            directory / "app.log",
-            directory / "app.csv",
-        )
-        paths: list[Path] = [path for path in preferred if path.is_file()]
-
-        if paths:
-            return tuple(paths)
-
-        discovered = sorted(
-            path
-            for path in directory.iterdir()
-            if path.is_file() and path.suffix.lower() in {".log", ".csv", ".txt"}
-        )
-        return tuple(discovered)

@@ -9,6 +9,7 @@ from vetstats_app.services.analysis_chart_renderer import (
     save_chart_spec,
     save_chart_specs_to_pdf,
 )
+from vetstats_app.services.app_event_logger import log_error, log_info
 
 SUPPORTED_EXPORT_FORMATS = ("pdf", "png", "tiff")
 SUPPORTED_EXPORT_DPI = (300, 600)
@@ -55,30 +56,53 @@ def export_all_charts(
     destination: Path,
 ) -> str | None:
     if not charts:
-        return "Brak wykresów do wyeksportowania."
+        message = "Brak wykresów do wyeksportowania."
+        log_error("chart_export", f"Eksport wielu wykresów nie powiódł się: {message}")
+        return message
 
     if settings.file_format not in SUPPORTED_EXPORT_FORMATS:
-        return f"Nieobsługiwany format eksportu: {settings.file_format}."
+        message = f"Nieobsługiwany format eksportu: {settings.file_format}."
+        log_error("chart_export", f"Eksport wielu wykresów nie powiódł się: {message}")
+        return message
     if settings.dpi not in SUPPORTED_EXPORT_DPI:
-        return f"Nieobsługiwana rozdzielczość DPI: {settings.dpi}."
+        message = f"Nieobsługiwana rozdzielczość DPI: {settings.dpi}."
+        log_error("chart_export", f"Eksport wielu wykresów nie powiódł się: {message}")
+        return message
 
     try:
         if settings.file_format == "pdf":
             save_chart_specs_to_pdf(charts, destination, dpi=settings.dpi)
-            return None
-
-        destination.mkdir(parents=True, exist_ok=True)
-        for chart in charts:
-            file_path = destination / _chart_filename(chart, settings.file_format)
-            save_chart_spec(
-                chart,
-                file_path,
-                file_format=settings.file_format,
-                dpi=settings.dpi,
-            )
-        return None
+        else:
+            destination.mkdir(parents=True, exist_ok=True)
+            for chart in charts:
+                file_path = destination / _chart_filename(chart, settings.file_format)
+                save_chart_spec(
+                    chart,
+                    file_path,
+                    file_format=settings.file_format,
+                    dpi=settings.dpi,
+                )
     except OSError as error:
-        return f"Nie udało się zapisać wykresów: {error}"
+        message = f"Nie udało się zapisać wykresów: {error}"
+        log_error(
+            "chart_export",
+            (
+                f"Eksport wielu wykresów nie powiódł się "
+                f"({len(charts)} wykresów, format {settings.file_format}, "
+                f"DPI {settings.dpi}, cel: {destination}): {error}"
+            ),
+        )
+        return message
+
+    destination_label = str(destination)
+    log_info(
+        "chart_export",
+        (
+            f"Eksport wielu wykresów: {len(charts)} wykresów, "
+            f"format {settings.file_format}, DPI {settings.dpi} → {destination_label}"
+        ),
+    )
+    return None
 
 
 def export_single_chart(
@@ -89,9 +113,13 @@ def export_single_chart(
     overrides: ChartExportOverrides | None = None,
 ) -> str | None:
     if settings.file_format not in SUPPORTED_EXPORT_FORMATS:
-        return f"Nieobsługiwany format eksportu: {settings.file_format}."
+        message = f"Nieobsługiwany format eksportu: {settings.file_format}."
+        log_error("chart_export", f"Eksport pojedynczego wykresu nie powiódł się: {message}")
+        return message
     if settings.dpi not in SUPPORTED_EXPORT_DPI:
-        return f"Nieobsługiwana rozdzielczość DPI: {settings.dpi}."
+        message = f"Nieobsługiwana rozdzielczość DPI: {settings.dpi}."
+        log_error("chart_export", f"Eksport pojedynczego wykresu nie powiódł się: {message}")
+        return message
 
     export_spec = apply_chart_overrides(chart, overrides)
 
@@ -105,9 +133,26 @@ def export_single_chart(
             file_format=settings.file_format,
             dpi=settings.dpi,
         )
-        return None
     except OSError as error:
-        return f"Nie udało się zapisać wykresu: {error}"
+        message = f"Nie udało się zapisać wykresu: {error}"
+        log_error(
+            "chart_export",
+            (
+                f"Eksport pojedynczego wykresu \"{export_spec.title}\" nie powiódł się "
+                f"(format {settings.file_format}, DPI {settings.dpi}, "
+                f"cel: {destination}): {error}"
+            ),
+        )
+        return message
+
+    log_info(
+        "chart_export",
+        (
+            f"Eksport pojedynczego wykresu: \"{export_spec.title}\", "
+            f"format {settings.file_format}, DPI {settings.dpi} → {destination}"
+        ),
+    )
+    return None
 
 
 def _chart_filename(chart: AnalysisChartSpec, file_format: str) -> str:

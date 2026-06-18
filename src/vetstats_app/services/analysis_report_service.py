@@ -99,6 +99,7 @@ from vetstats_app.services.diagnosis_frequency_service import DiagnosisFrequency
 from vetstats_app.services.patient_id_cross_table_summary_service import (
     PatientIdCrossTableSummaryService,
 )
+from vetstats_app.services.app_event_logger import log_error, log_info
 from vetstats_app.services.section_report_pdf import (
     write_combined_analysis_report_pdf,
     write_section_report_pdf,
@@ -576,7 +577,19 @@ class AnalysisReportService:
         try:
             write_section_report_pdf(report, destination)
         except OSError as exc:
-            return f"Nie udało się zapisać raportu PDF: {exc}"
+            message = f"Nie udało się zapisać raportu PDF: {exc}"
+            log_error(
+                "analysis_report",
+                f"Eksport raportu PDF {report.section_title} nie powiódł się: {exc}",
+            )
+            return message
+        log_info(
+            "analysis_report",
+            (
+                f"Wyeksportowano raport PDF: {report.section_title} → "
+                f"{Path(destination).name}"
+            ),
+        )
         return None
 
     def export_diagnosis_frequency_report_pdf(
@@ -655,7 +668,22 @@ class AnalysisReportService:
         try:
             write_combined_analysis_report_pdf(report, destination)
         except OSError as exc:
-            return f"Nie udało się zapisać raportu PDF: {exc}"
+            message = f"Nie udało się zapisać raportu PDF: {exc}"
+            log_error(
+                "analysis_report",
+                (
+                    f"Eksport raportu PDF {report.report_title} nie powiódł się: "
+                    f"{exc}"
+                ),
+            )
+            return message
+        log_info(
+            "analysis_report",
+            (
+                f"Wyeksportowano raport PDF: {report.report_title} → "
+                f"{Path(destination).name}"
+            ),
+        )
         return None
 
     def export_final_automatic_analysis_report_pdf(

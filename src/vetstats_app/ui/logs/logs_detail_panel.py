@@ -1,5 +1,6 @@
 from collections.abc import Callable
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -17,6 +18,13 @@ PLACEHOLDER_TEXT = (
 )
 
 
+def _detail_label(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    return label
+
+
 class LogsDetailPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -31,11 +39,11 @@ class LogsDetailPanel(QWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setWidget(content_widget)
 
-        self._generate_report_button = QPushButton("Generate Logs Report")
-        self._export_csv_button = QPushButton("Export Logs as CSV")
+        self._export_pdf_button = QPushButton("Eksportuj logi do PDF")
+        self._export_csv_button = QPushButton("Eksportuj logi do CSV")
 
         controls_layout = QHBoxLayout()
-        controls_layout.addWidget(self._generate_report_button)
+        controls_layout.addWidget(self._export_pdf_button)
         controls_layout.addWidget(self._export_csv_button)
         controls_layout.addStretch()
 
@@ -44,16 +52,17 @@ class LogsDetailPanel(QWidget):
         layout.addLayout(controls_layout)
 
         self._status_label = QLabel("")
+        self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 
-    def connect_generate_report(self, callback: Callable[[], None]) -> None:
-        self._generate_report_button.clicked.connect(callback)
+    def connect_export_pdf(self, callback: Callable[[], None]) -> None:
+        self._export_pdf_button.clicked.connect(callback)
 
     def connect_export_csv(self, callback: Callable[[], None]) -> None:
         self._export_csv_button.clicked.connect(callback)
 
     def set_export_enabled(self, enabled: bool) -> None:
-        self._generate_report_button.setEnabled(enabled)
+        self._export_pdf_button.setEnabled(enabled)
         self._export_csv_button.setEnabled(enabled)
 
     def show_status_message(self, message: str) -> None:
@@ -66,7 +75,7 @@ class LogsDetailPanel(QWidget):
     def show_load_error(self, message: str) -> None:
         self._clear_content()
         self._content_layout.addWidget(
-            QLabel(message or "Nie udało się wczytać logów.")
+            _detail_label(message or "Nie udało się wczytać logów.")
         )
 
     def show_detail(self, entry: LogEntry) -> None:
@@ -74,11 +83,13 @@ class LogsDetailPanel(QWidget):
 
         detail_group = QGroupBox("Szczegóły wpisu logu")
         detail_layout = QVBoxLayout(detail_group)
-        detail_layout.addWidget(QLabel(f"ID: {entry.id}"))
-        detail_layout.addWidget(QLabel(f"Timestamp: {entry.timestamp or '—'}"))
-        detail_layout.addWidget(QLabel(f"Level: {entry.level}"))
-        detail_layout.addWidget(QLabel(f"Source: {entry.source or '—'}"))
-        detail_layout.addWidget(QLabel(f"Message: {entry.message}"))
+        detail_layout.addWidget(_detail_label(f"ID: {entry.id}"))
+        detail_layout.addWidget(
+            _detail_label(f"Czas: {entry.timestamp or '—'}")
+        )
+        detail_layout.addWidget(_detail_label(f"Poziom: {entry.level}"))
+        detail_layout.addWidget(_detail_label(f"Źródło: {entry.source or '—'}"))
+        detail_layout.addWidget(_detail_label(f"Wiadomość: {entry.message}"))
         self._content_layout.addWidget(detail_group)
 
     def _clear_content(self) -> None:

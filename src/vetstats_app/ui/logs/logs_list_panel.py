@@ -3,6 +3,7 @@ from collections.abc import Callable
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QHeaderView,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -14,21 +15,40 @@ from vetstats_app.analysis.logs import LogsCatalog
 COLUMN_HEADERS = ("timestamp", "level", "source", "message")
 
 
+class _LogsHistoryTable(QTableWidget):
+    """Wraps log messages and grows row heights to fit wrapped content."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWordWrap(True)
+        self.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def resizeEvent(self, event) -> None:  # noqa: ANN001 - Qt signature
+        super().resizeEvent(event)
+        self.resizeRowsToContents()
+
+
 class LogsListPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFixedWidth(520)
 
-        self._table = QTableWidget()
+        self._table = _LogsHistoryTable()
         self._table.setColumnCount(len(COLUMN_HEADERS))
         self._table.setHorizontalHeaderLabels(list(COLUMN_HEADERS))
         self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self._table.horizontalHeader().setSectionResizeMode(
-            3,
-            QHeaderView.ResizeMode.Stretch,
-        )
+
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setMinimumSectionSize(48)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._table)
@@ -58,10 +78,16 @@ class LogsListPanel(QWidget):
 
         self._table.setRowCount(len(catalog.entries))
         for row_index, entry in enumerate(catalog.entries):
-            self._table.setItem(row_index, 0, self._create_item(entry.timestamp, entry.id))
+            self._table.setItem(
+                row_index, 0, self._create_item(entry.timestamp, entry.id)
+            )
             self._table.setItem(row_index, 1, self._create_item(entry.level, entry.id))
             self._table.setItem(row_index, 2, self._create_item(entry.source, entry.id))
-            self._table.setItem(row_index, 3, self._create_item(entry.message, entry.id))
+            self._table.setItem(
+                row_index, 3, self._create_item(entry.message, entry.id)
+            )
+
+        self._table.resizeRowsToContents()
 
     def connect_current_log_entry_changed(
         self,
@@ -74,6 +100,9 @@ class LogsListPanel(QWidget):
     def clear_selection(self) -> None:
         self._table.clearSelection()
         self._table.setCurrentItem(None)
+
+    def current_entry_id(self) -> str | None:
+        return self._current_entry_id()
 
     def _current_entry_id(self) -> str | None:
         selected_rows = self._table.selectionModel().selectedRows()
@@ -92,5 +121,6 @@ class LogsListPanel(QWidget):
     def _create_item(value: str, entry_id: str) -> QTableWidgetItem:
         item = QTableWidgetItem(value)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        item.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         item.setData(Qt.ItemDataRole.UserRole, entry_id)
         return item

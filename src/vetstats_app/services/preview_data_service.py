@@ -7,6 +7,7 @@ import pandas as pd
 
 from data_sterilizer.config import DEFAULT_INPUT_DIR, DEFAULT_OUTPUT_DIR, sterile_output_name
 from data_sterilizer.io.loader import SOURCE_ROW_COLUMN, load_csv
+from vetstats_app.services.app_event_logger import log_error, log_info, log_warning
 
 TABLE_FILE_NAMES: dict[str, str] = {
     "patient": "patient.csv",
@@ -58,6 +59,10 @@ class PreviewDataService:
         file_name = TABLE_FILE_NAMES[table_name]
         source_path = self._resolve_dataset_path(file_name)
         if source_path is None:
+            log_warning(
+                "preview_data",
+                f"Nie znaleziono tabeli {table_name} ({file_name})",
+            )
             return PreviewDatasetSnapshot(
                 table_name=table_name,
                 file_name=file_name,
@@ -72,6 +77,10 @@ class PreviewDataService:
         try:
             frame = load_csv(source_path)
         except OSError as exc:
+            log_error(
+                "preview_data",
+                f"Nie wczytano {table_name} z {source_path.name}: {exc}",
+            )
             return PreviewDatasetSnapshot(
                 table_name=table_name,
                 file_name=file_name,
@@ -80,12 +89,20 @@ class PreviewDataService:
                 error_message=f"Nie udało się wczytać {source_path.name}: {exc}",
             )
 
-        return PreviewDatasetSnapshot(
+        snapshot = PreviewDatasetSnapshot(
             table_name=table_name,
             file_name=file_name,
             source_path=source_path,
             frame=frame,
         )
+        log_info(
+            "preview_data",
+            (
+                f"Wczytano {table_name} z {source_path.name} "
+                f"({snapshot.row_count} wierszy, {snapshot.column_count} kolumn)"
+            ),
+        )
+        return snapshot
 
     def _resolve_dataset_path(self, dataset_name: str) -> Path | None:
         candidates = (

@@ -13,6 +13,7 @@ from vetstats_app.analysis.patient_history import (
     build_patient_history_detail,
     build_patient_history_section_report,
 )
+from vetstats_app.services.app_event_logger import log_error, log_info
 from vetstats_app.services.section_report_pdf import write_section_report_pdf
 
 
@@ -73,7 +74,22 @@ class PatientHistoryService:
         try:
             write_section_report_pdf(report, Path(destination))
         except OSError as exc:
-            return f"Nie udało się zapisać raportu PDF: {exc}"
+            message = f"Nie udało się zapisać raportu PDF: {exc}"
+            log_error(
+                "patient_history",
+                (
+                    f"Eksport historii pacjenta {detail.patient_id} do PDF "
+                    f"({Path(destination).name}) nie powiódł się: {exc}"
+                ),
+            )
+            return message
+        log_info(
+            "patient_history",
+            (
+                f"Wyeksportowano historię pacjenta {detail.patient_id} do PDF: "
+                f"{Path(destination).name}"
+            ),
+        )
         return None
 
     def _load_datasets(self) -> None:
@@ -90,11 +106,20 @@ class PatientHistoryService:
 
         if missing:
             self._load_error = "Nie znaleziono plików: " + ", ".join(missing) + "."
+            log_error("patient_history", self._load_error)
             return
 
         self._patient = datasets["patient"]
         self._clinical = datasets["clinical"]
         self._micro = datasets["micro"]
+        log_info(
+            "patient_history",
+            (
+                "Wczytano dane historii pacjenta "
+                f"({len(self._patient)} pacjentów, {len(self._clinical)} clinical, "
+                f"{len(self._micro)} micro)"
+            ),
+        )
 
     def _resolve_dataset_path(self, dataset_name: str) -> Path | None:
         candidates = (

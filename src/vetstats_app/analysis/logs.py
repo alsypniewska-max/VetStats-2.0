@@ -3,11 +3,13 @@ from __future__ import annotations
 import csv
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
 from data_sterilizer.config import CSV_DELIMITER
+from vetstats_app.analysis.report_models import AnalysisSectionReport, ReportTableBlock
 
 LOG_ENTRY_LEVELS: tuple[str, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -195,22 +197,55 @@ def build_logs_catalog(*source_paths: Path) -> LogsCatalog:
     )
 
 
-def write_logs_report(entries: tuple[LogEntry, ...], destination: Path) -> None:
-    lines = [
-        "VetStats 2.0 — raport logów",
-        f"Liczba wpisów: {len(entries)}",
-        "",
-    ]
-    for entry in entries:
-        lines.append(
-            f"{entry.timestamp} [{entry.level}] {entry.source}: {entry.message}"
-        )
-    destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+def format_export_timestamp(when: datetime | None = None) -> str:
+    moment = when or datetime.now()
+    return moment.strftime("%d.%m.%Y %H:%M:%S")
 
 
-def write_logs_csv(entries: tuple[LogEntry, ...], destination: Path) -> None:
-    with destination.open("w", encoding="utf-8", newline="") as handle:
+def build_logs_section_report(
+    entries: tuple[LogEntry, ...],
+    *,
+    source_labels: tuple[str, ...] = (),
+    exported_at: datetime | None = None,
+) -> AnalysisSectionReport:
+    exported_at_text = format_export_timestamp(exported_at)
+    summary = (
+        f"Data i godzina eksportu: {exported_at_text}. "
+        f"Liczba wpisów: {len(entries)}."
+    )
+    if source_labels:
+        summary += f" Źródła plików logów: {', '.join(source_labels)}."
+
+    return AnalysisSectionReport(
+        section_title="Raport logów VetStats 2.0",
+        source_labels=source_labels,
+        summary_details=summary,
+        interpretation_summary="Pełna historia zdarzeń aplikacji VetStats 2.0.",
+        table_blocks=(
+            ReportTableBlock(
+                title="Historia logów",
+                columns=("timestamp", "level", "source", "message"),
+                rows=tuple(
+                    (entry.timestamp, entry.level, entry.source, entry.message)
+                    for entry in entries
+                ),
+            ),
+        ),
+    )
+
+
+def write_logs_csv(
+    entries: tuple[LogEntry, ...],
+    destination: Path,
+    *,
+    exported_at: datetime | None = None,
+) -> None:
+    exported_at_text = format_export_timestamp(exported_at)
+    with destination.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle, delimiter=CSV_DELIMITER)
+        writer.writerow(["Data i godzina eksportu", exported_at_text])
+        writer.writerow(["Liczba wpisów", str(len(entries))])
+        writer.writerow([])
         writer.writerow(["timestamp", "level", "source", "message"])
         for entry in entries:
             writer.writerow([entry.timestamp, entry.level, entry.source, entry.message])
