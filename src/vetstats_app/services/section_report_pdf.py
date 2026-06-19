@@ -259,8 +259,6 @@ def _build_section_story(
 
 
 def _chart_spec_renderable(spec: AnalysisChartSpec) -> bool:
-    if spec.chart_type == "histogram":
-        return len(spec.values) >= 2
     return spec.has_data
 
 

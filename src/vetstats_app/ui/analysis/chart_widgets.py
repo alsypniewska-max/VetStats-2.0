@@ -10,14 +10,7 @@ from vetstats_app.services.analysis_chart_renderer import create_chart_widget
 def exportable_charts(
     charts: tuple[AnalysisChartSpec, ...],
 ) -> tuple[AnalysisChartSpec, ...]:
-    exportable: list[AnalysisChartSpec] = []
-    for chart in charts:
-        if chart.chart_type == "histogram":
-            if len(chart.values) >= 2:
-                exportable.append(chart)
-        elif chart.has_data:
-            exportable.append(chart)
-    return tuple(exportable)
+    return tuple(chart for chart in charts if chart.has_data)
 
 
 def build_chart_section(

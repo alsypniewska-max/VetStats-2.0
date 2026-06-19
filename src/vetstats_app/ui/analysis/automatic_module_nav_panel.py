@@ -11,6 +11,9 @@ AUTOMATIC_MODULE_LABELS = [
     "Powiązanie rozpoznań z posiewem",
     "Analiza zależności między zabiegiem a rozpoznaniem",
     "Powiązanie leczenia z typem wrzodu",
+    "Czas trwania problemu przed pierwszą wizytą",
+    "Rozkład wymazów w miesiącach i latach",
+    "Leki stosowane przed wymazem",
     "Powiązania patient_ID między tabelami",
 ]
 

@@ -11,12 +11,39 @@ from vetstats_app.analysis.chart_specs import (
     build_resistance_over_time_charts,
     build_treatment_groups_charts,
     build_treatment_diagnosis_relationship_charts,
+    build_duration_of_problem_stats_charts,
+    build_micro_monthly_distribution_charts,
+    build_pre_swab_drugs_charts,
 )
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
     DiagnosisFrequencyResult,
     build_descriptive_stats_block as build_diagnosis_frequency_descriptive_stats_block,
     build_interpretation_summary as build_diagnosis_frequency_interpretation,
+)
+from vetstats_app.analysis.clinical_common import format_optional_number
+from vetstats_app.analysis.duration_of_problem_stats import (
+    DurationOfProblemStatsResult,
+    build_descriptive_stats_block as build_duration_of_problem_descriptive_stats_block,
+    build_interpretation_summary as build_duration_of_problem_interpretation,
+    build_summary_details as build_duration_of_problem_summary_details,
+)
+from vetstats_app.analysis.micro_monthly_distribution import (
+    MicroMonthlyDistributionResult,
+    build_descriptive_stats_block as build_micro_monthly_descriptive_stats_block,
+    build_interpretation_summary as build_micro_monthly_interpretation,
+    build_summary_details as build_micro_monthly_summary_details,
+    monthly_distribution_table_block,
+)
+from vetstats_app.analysis.pre_swab_drugs import (
+    PreSwabDrugsResult,
+    build_descriptive_stats_block as build_pre_swab_drugs_descriptive_stats_block,
+    build_interpretation_summary as build_pre_swab_drugs_interpretation,
+    build_summary_details as build_pre_swab_drugs_summary_details,
+    culture_outcomes_table_block,
+    drug_culture_crosstab_table_block,
+    top_drugs_table_block,
+    treatment_status_culture_crosstab_table_block,
 )
 from vetstats_app.analysis.treatment_groups import (
     TreatmentCategoryRow,
@@ -251,6 +278,89 @@ class AnalysisReportService:
                 ),
             ),
             chart_specs=build_treatment_groups_charts(result),
+        )
+
+    def build_duration_of_problem_stats_payload(
+        self,
+        result: DurationOfProblemStatsResult,
+    ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_duration_of_problem_descriptive_stats_block(result)
+        return AnalysisSectionPayload(
+            section_title="Czas trwania problemu przed pierwszą wizytą",
+            source_labels=(result.source_label,),
+            summary_details=build_duration_of_problem_summary_details(result),
+            interpretation_summary=build_duration_of_problem_interpretation(result),
+            table_blocks=(
+                descriptive_stats_block,
+                ReportTableBlock(
+                    title="Czas trwania problemu według typu wrzodu",
+                    columns=(
+                        "Typ wrzodu",
+                        "Liczba",
+                        "Średnia (dni)",
+                        "Mediana (dni)",
+                        "P25 (dni)",
+                        "P75 (dni)",
+                    ),
+                    rows=tuple(
+                        (
+                            row.ulcer_label,
+                            str(row.count),
+                            format_optional_number(row.mean_days),
+                            format_optional_number(row.median_days),
+                            format_optional_number(row.percentile_25_days),
+                            format_optional_number(row.percentile_75_days),
+                        )
+                        for row in result.by_ulcer_type
+                    ),
+                ),
+            ),
+            chart_specs=build_duration_of_problem_stats_charts(result),
+        )
+
+    def build_micro_monthly_distribution_payload(
+        self,
+        result: MicroMonthlyDistributionResult,
+    ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_micro_monthly_descriptive_stats_block(result)
+        yearly_tables = tuple(
+            monthly_distribution_table_block(distribution)
+            for distribution in result.yearly_distributions
+        )
+        combined_table = monthly_distribution_table_block(
+            result.combined_distribution,
+            combined=True,
+        )
+        return AnalysisSectionPayload(
+            section_title="Rozkład wymazów w miesiącach i latach",
+            source_labels=(result.source_label,),
+            summary_details=build_micro_monthly_summary_details(result),
+            interpretation_summary=build_micro_monthly_interpretation(result),
+            table_blocks=(descriptive_stats_block, *yearly_tables, combined_table),
+            chart_specs=build_micro_monthly_distribution_charts(result),
+        )
+
+    def build_pre_swab_drugs_payload(
+        self,
+        result: PreSwabDrugsResult,
+    ) -> AnalysisSectionPayload:
+        descriptive_stats_block = build_pre_swab_drugs_descriptive_stats_block(result)
+        table_blocks = [descriptive_stats_block]
+        if result.top_drugs:
+            table_blocks.append(top_drugs_table_block(result))
+        if result.culture_outcomes:
+            table_blocks.append(culture_outcomes_table_block(result))
+        if result.treatment_status_culture_crosstab:
+            table_blocks.append(treatment_status_culture_crosstab_table_block(result))
+        if result.drug_culture_crosstab:
+            table_blocks.append(drug_culture_crosstab_table_block(result))
+        return AnalysisSectionPayload(
+            section_title="Leki stosowane przed wymazem",
+            source_labels=(result.source_clinical_label, result.source_micro_label),
+            summary_details=build_pre_swab_drugs_summary_details(result),
+            interpretation_summary=build_pre_swab_drugs_interpretation(result),
+            table_blocks=tuple(table_blocks),
+            chart_specs=build_pre_swab_drugs_charts(result),
         )
 
     def build_microbiology_results_payload(
@@ -600,6 +710,53 @@ class AnalysisReportService:
         report = self.prepare_diagnosis_frequency_report(result)
         return self.export_section_report_pdf(report, destination)
 
+    def prepare_duration_of_problem_stats_report(
+        self,
+        result: DurationOfProblemStatsResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_duration_of_problem_stats_payload(result)
+        )
+
+    def export_duration_of_problem_stats_report_pdf(
+        self,
+        result: DurationOfProblemStatsResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_duration_of_problem_stats_report(result)
+        return self.export_section_report_pdf(report, destination)
+
+    def prepare_micro_monthly_distribution_report(
+        self,
+        result: MicroMonthlyDistributionResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_micro_monthly_distribution_payload(result)
+        )
+
+    def export_micro_monthly_distribution_report_pdf(
+        self,
+        result: MicroMonthlyDistributionResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_micro_monthly_distribution_report(result)
+        return self.export_section_report_pdf(report, destination)
+
+    def prepare_pre_swab_drugs_report(
+        self,
+        result: PreSwabDrugsResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_pre_swab_drugs_payload(result)
+        )
+
+    def export_pre_swab_drugs_report_pdf(
+        self,
+        result: PreSwabDrugsResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_pre_swab_drugs_report(result)
+        return self.export_section_report_pdf(report, destination)
 
     def export_diagnosis_frequency_report(
         self,

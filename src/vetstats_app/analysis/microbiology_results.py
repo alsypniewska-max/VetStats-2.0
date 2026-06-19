@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 import pandas as pd
-
-from vetstats_app.analysis.display_text import sanitize_matplotlib_text
-from vetstats_app.analysis.report_models import ReportTableBlock
 
 from data_sterilizer.schemas.clinical import (
     DATE_APPOINTMENT_COLUMN,
     PATIENT_ID_COLUMN as CLINICAL_PATIENT_ID_COLUMN,
-    is_valid_clinical_date,
 )
 from data_sterilizer.schemas.micro import (
     BACTERIA_COLUMN,
@@ -19,10 +14,16 @@ from data_sterilizer.schemas.micro import (
     NEGATIVE_BACTERIA_VALUE,
     PATIENT_ID_COLUMN as MICRO_PATIENT_ID_COLUMN,
     RESULT_ID_COLUMN,
-    parse_micro_date,
 )
+from vetstats_app.analysis.clinical_common import resolve_column
+from vetstats_app.analysis.clinical_micro_matching import (
+    ClinicalMicroMatchingSummary,
+    match_clinical_rows_to_micro_bacteria,
+    normalize_micro_bacteria,
+)
+from vetstats_app.analysis.report_models import ReportTableBlock
 
-UNKNOWN_VALUE = "xxx"
+MatchingSummary = ClinicalMicroMatchingSummary
 
 
 @dataclass(frozen=True)
@@ -30,14 +31,6 @@ class BacteriaFrequencyRow:
     bacteria: str
     count: int
     percentage: float
-
-
-@dataclass(frozen=True)
-class MatchingSummary:
-    clinical_rows: int
-    matched_pairs: int
-    unmatched_clinical_rows: int
-    patients_with_multiple_results: int
 
 
 @dataclass(frozen=True)
@@ -56,141 +49,6 @@ class MicrobiologyResultsResult:
         return self.error_message is None
 
 
-def _resolve_column(clinical_or_micro: pd.DataFrame, *candidates: str) -> str | None:
-    lower_to_actual = {
-        str(column).strip().lower(): str(column).strip()
-        for column in clinical_or_micro.columns
-    }
-    for candidate in candidates:
-        if candidate in clinical_or_micro.columns:
-            return candidate
-        actual = lower_to_actual.get(candidate.lower())
-        if actual is not None:
-            return actual
-    return None
-
-
-def _parse_clinical_date(value: object) -> datetime | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    text = str(value).strip()
-    if not text or text.lower() == UNKNOWN_VALUE:
-        return None
-    if not is_valid_clinical_date(text):
-        return None
-    day_text, month_text, year_text = text.split(".")
-    return datetime(int(year_text), int(month_text), int(day_text))
-
-
-def _normalize_bacteria(value: object) -> str | None:
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    text = sanitize_matplotlib_text(str(value).strip().lower())
-    if not text or text == UNKNOWN_VALUE:
-        return None
-    return text
-
-
-def _match_micro_results_to_clinical(
-    clinical: pd.DataFrame,
-    micro: pd.DataFrame,
-) -> tuple[pd.DataFrame, MatchingSummary]:
-    """Match each clinical row to one micro result for the same patient.
-
-    When a patient has multiple micro result_ID values, choose the result whose
-    date_collect is closest to clinical.date_appointment_first_before_micro.
-    All micro rows sharing the selected result_ID are kept for bacteria counting.
-    """
-    clinical_patient_col = _resolve_column(clinical, CLINICAL_PATIENT_ID_COLUMN)
-    appointment_col = _resolve_column(clinical, DATE_APPOINTMENT_COLUMN)
-    micro_patient_col = _resolve_column(micro, MICRO_PATIENT_ID_COLUMN)
-    result_id_col = _resolve_column(micro, RESULT_ID_COLUMN)
-    date_collect_col = _resolve_column(micro, DATE_COLLECT_COLUMN)
-    bacteria_col = _resolve_column(micro, BACTERIA_COLUMN)
-
-    if any(
-        column is None
-        for column in (
-            clinical_patient_col,
-            appointment_col,
-            micro_patient_col,
-            result_id_col,
-            date_collect_col,
-            bacteria_col,
-        )
-    ):
-        return pd.DataFrame(), MatchingSummary(0, 0, 0, 0)
-
-    clinical_work = clinical.copy()
-    clinical_work["_appointment_date"] = clinical_work[appointment_col].map(
-        _parse_clinical_date
-    )
-
-    micro_results = (
-        micro.groupby([micro_patient_col, result_id_col], dropna=False)
-        .agg({date_collect_col: "first"})
-        .reset_index()
-    )
-    micro_results["_collect_date"] = micro_results[date_collect_col].map(parse_micro_date)
-    micro_results = micro_results.dropna(subset=["_collect_date"])
-
-    patients_with_multiple_results = int(
-        micro_results.groupby(micro_patient_col)[result_id_col].nunique().gt(1).sum()
-    )
-
-    matched_rows: list[dict[str, object]] = []
-    matched_clinical_rows = 0
-    unmatched_clinical_rows = 0
-
-    for clinical_index, clinical_row in clinical_work.iterrows():
-        appointment_date = clinical_row["_appointment_date"]
-        patient_id = clinical_row[clinical_patient_col]
-        if appointment_date is None or pd.isna(patient_id):
-            unmatched_clinical_rows += 1
-            continue
-
-        patient_micro = micro_results[micro_results[micro_patient_col] == patient_id]
-        if patient_micro.empty:
-            unmatched_clinical_rows += 1
-            continue
-
-        best_match = min(
-            patient_micro.to_dict("records"),
-            key=lambda row: (
-                abs((row["_collect_date"] - appointment_date).days),
-                row["_collect_date"],
-                str(row[result_id_col]),
-            ),
-        )
-        matched_result_id = best_match[result_id_col]
-        matched_micro_rows = micro[
-            (micro[micro_patient_col] == patient_id)
-            & (micro[result_id_col] == matched_result_id)
-        ]
-
-        matched_clinical_rows += 1
-        for _, micro_row in matched_micro_rows.iterrows():
-            matched_rows.append(
-                {
-                    "clinical_index": clinical_index,
-                    "patient_ID": patient_id,
-                    "result_ID": matched_result_id,
-                    "bacteria": micro_row[bacteria_col],
-                }
-            )
-
-    matching = MatchingSummary(
-        clinical_rows=len(clinical),
-        matched_pairs=matched_clinical_rows,
-        unmatched_clinical_rows=unmatched_clinical_rows,
-        patients_with_multiple_results=patients_with_multiple_results,
-    )
-    if not matched_rows:
-        return pd.DataFrame(), matching
-
-    return pd.DataFrame(matched_rows), matching
-
-
 def compute_microbiology_results(
     clinical: pd.DataFrame,
     micro: pd.DataFrame,
@@ -199,14 +57,14 @@ def compute_microbiology_results(
     source_micro_label: str = "micro",
 ) -> MicrobiologyResultsResult:
     required_checks = {
-        "clinical.patient_ID": _resolve_column(clinical, CLINICAL_PATIENT_ID_COLUMN),
-        "clinical.date_appointment_first_before_micro": _resolve_column(
+        "clinical.patient_ID": resolve_column(clinical, CLINICAL_PATIENT_ID_COLUMN),
+        "clinical.date_appointment_first_before_micro": resolve_column(
             clinical, DATE_APPOINTMENT_COLUMN
         ),
-        "micro.patient_ID": _resolve_column(micro, MICRO_PATIENT_ID_COLUMN),
-        "micro.result_ID": _resolve_column(micro, RESULT_ID_COLUMN),
-        "micro.date_collect": _resolve_column(micro, DATE_COLLECT_COLUMN),
-        "micro.bacteria": _resolve_column(micro, BACTERIA_COLUMN),
+        "micro.patient_ID": resolve_column(micro, MICRO_PATIENT_ID_COLUMN),
+        "micro.result_ID": resolve_column(micro, RESULT_ID_COLUMN),
+        "micro.date_collect": resolve_column(micro, DATE_COLLECT_COLUMN),
+        "micro.bacteria": resolve_column(micro, BACTERIA_COLUMN),
     }
     missing = [name for name, column in required_checks.items() if column is None]
     if missing:
@@ -225,7 +83,7 @@ def compute_microbiology_results(
             ),
         )
 
-    matched_pairs, matching = _match_micro_results_to_clinical(clinical, micro)
+    matched_pairs, matching = match_clinical_rows_to_micro_bacteria(clinical, micro)
     if matched_pairs.empty:
         return MicrobiologyResultsResult(
             source_clinical_label=source_clinical_label,
@@ -237,7 +95,7 @@ def compute_microbiology_results(
             included_isolates=0,
         )
 
-    normalized_bacteria = matched_pairs["bacteria"].map(_normalize_bacteria)
+    normalized_bacteria = matched_pairs["bacteria"].map(normalize_micro_bacteria)
     valid_mask = normalized_bacteria.notna()
     valid_bacteria = normalized_bacteria[valid_mask]
 

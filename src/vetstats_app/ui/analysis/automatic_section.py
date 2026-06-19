@@ -5,6 +5,13 @@ from vetstats_app.ui.analysis.diagnosis_culture_relationship_view import (
     DiagnosisCultureRelationshipView,
 )
 from vetstats_app.ui.analysis.diagnosis_frequency_view import DiagnosisFrequencyView
+from vetstats_app.ui.analysis.duration_of_problem_stats_view import (
+    DurationOfProblemStatsView,
+)
+from vetstats_app.ui.analysis.micro_monthly_distribution_view import (
+    MicroMonthlyDistributionView,
+)
+from vetstats_app.ui.analysis.pre_swab_drugs_view import PreSwabDrugsView
 from vetstats_app.ui.analysis.microbiology_results_view import MicrobiologyResultsView
 from vetstats_app.ui.analysis.patient_id_cross_table_summary_view import (
     PatientIdCrossTableSummaryView,
@@ -38,6 +45,9 @@ class AutomaticAnalysisSection(QWidget):
             DiagnosisCultureRelationshipView(),
             ProcedureDiagnosisRelationshipView(),
             TreatmentDiagnosisRelationshipView(),
+            DurationOfProblemStatsView(),
+            MicroMonthlyDistributionView(),
+            PreSwabDrugsView(),
             PatientIdCrossTableSummaryView(),
         )
         for view in module_views:

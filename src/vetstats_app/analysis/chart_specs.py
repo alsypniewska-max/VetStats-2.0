@@ -28,6 +28,17 @@ from vetstats_app.analysis.treatment_diagnosis_relationship import (
     TreatmentDiagnosisRelationshipResult,
     observed_treatment_categories,
 )
+from vetstats_app.analysis.duration_of_problem_stats import DurationOfProblemStatsResult
+from vetstats_app.analysis.micro_monthly_distribution import (
+    MicroMonthlyDistributionResult,
+    YearlyMonthlyDistribution,
+)
+from vetstats_app.analysis.pre_swab_drugs import (
+    CULTURE_OUTCOME_ORDER,
+    NO_PRIOR_TREATMENT_LABEL,
+    PreSwabDrugsResult,
+    TREATMENT_STATUS_ORDER,
+)
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -528,5 +539,304 @@ def build_treatment_diagnosis_relationship_charts(
                 orientation="horizontal",
             )
         )
+
+    return tuple(charts)
+
+
+def build_duration_of_problem_stats_charts(
+    result: DurationOfProblemStatsResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success or result.included_rows == 0:
+        return ()
+
+    observed = [
+        row
+        for row in result.by_ulcer_type
+        if row.count > 0 and row.median_days is not None and row.mean_days is not None
+    ]
+    if not observed:
+        return ()
+
+    ulcer_labels = tuple(row.ulcer_label for row in observed)
+    charts: list[AnalysisChartSpec] = [
+        AnalysisChartSpec(
+            chart_id="duration_of_problem_by_ulcer",
+            title="Mediana czasu trwania problemu przed wizytą według typu wrzodu",
+            subtitle="Wartość medianowa (mediana) w dniach",
+            chart_type="bar",
+            labels=ulcer_labels,
+            values=tuple(float(row.median_days) for row in observed),
+            x_axis_label="Typ wrzodu",
+            y_axis_label="Mediana (dni)",
+        ),
+        AnalysisChartSpec(
+            chart_id="duration_of_problem_mean_by_ulcer",
+            title="Średnia czasu trwania problemu przed wizytą według typu wrzodu",
+            subtitle="Wartość średnia (mean) w dniach",
+            chart_type="bar",
+            labels=ulcer_labels,
+            values=tuple(float(row.mean_days) for row in observed),
+            x_axis_label="Typ wrzodu",
+            y_axis_label="Średnia (dni)",
+        ),
+        AnalysisChartSpec(
+            chart_id="duration_of_problem_mean_vs_median_by_ulcer",
+            title="Porównanie średniej i mediany czasu trwania problemu",
+            subtitle="Średnia vs mediana według typu wrzodu (dni)",
+            chart_type="grouped_bar",
+            labels=ulcer_labels,
+            values=tuple(float(row.mean_days) for row in observed),
+            secondary_values=tuple(float(row.median_days) for row in observed),
+            x_axis_label="Typ wrzodu",
+            y_axis_label="Czas trwania (dni)",
+        ),
+    ]
+
+    if len(result.all_duration_days) >= 2:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="duration_of_problem_histogram",
+                title="Rozkład czasu trwania problemu przed wizytą",
+                subtitle="Histogram łączny dla wszystkich uwzględnionych przypadków wrzodowych",
+                chart_type="histogram",
+                labels=(),
+                values=result.all_duration_days,
+                x_axis_label="Czas trwania (dni)",
+                y_axis_label="Liczba przypadków",
+            )
+        )
+
+    box_groups = tuple(
+        group.duration_days
+        for group in result.duration_value_groups
+        if group.duration_days
+    )
+    box_labels = tuple(
+        group.ulcer_label
+        for group in result.duration_value_groups
+        if group.duration_days
+    )
+    if box_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="duration_of_problem_box_by_ulcer",
+                title="Rozstęp i wartości odstające czasu trwania problemu",
+                subtitle="Wykres pudełkowy (box plot) według typu wrzodu — mediana, kwartyle i outliery",
+                chart_type="box",
+                labels=box_labels,
+                values=(),
+                box_plot_groups=box_groups,
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Czas trwania (dni)",
+            )
+        )
+
+    if result.all_duration_days:
+        thresholds = (7, 14, 30, 90)
+        total = len(result.all_duration_days)
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="duration_of_problem_cumulative",
+                title="Skumulowany udział przypadków według czasu trwania problemu",
+                subtitle="Odsetek przypadków z czasem trwania nie dłuższym niż podany próg",
+                chart_type="bar",
+                labels=tuple(f"≤{threshold} dni" for threshold in thresholds),
+                values=tuple(
+                    sum(1 for value in result.all_duration_days if value <= threshold)
+                    / total
+                    * 100.0
+                    for threshold in thresholds
+                ),
+                x_axis_label="Próg czasu trwania",
+                y_axis_label="Udział przypadków (%)",
+            )
+        )
+
+    return tuple(charts)
+
+
+def _monthly_distribution_chart(
+    *,
+    chart_id: str,
+    title: str,
+    distribution: YearlyMonthlyDistribution,
+) -> AnalysisChartSpec:
+    return AnalysisChartSpec(
+        chart_id=chart_id,
+        title=title,
+        chart_type="bar",
+        labels=tuple(row.month_label for row in distribution.months),
+        values=tuple(float(row.count) for row in distribution.months),
+        x_axis_label="Miesiąc",
+        y_axis_label="Liczba wymazów",
+    )
+
+
+def build_micro_monthly_distribution_charts(
+    result: MicroMonthlyDistributionResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success or result.included_swabs == 0:
+        return ()
+
+    charts: list[AnalysisChartSpec] = []
+    for distribution in result.yearly_distributions:
+        charts.append(
+            _monthly_distribution_chart(
+                chart_id=f"micro_monthly_{distribution.year}",
+                title=f"Rozkład wymazów według miesiąca — {distribution.year}",
+                distribution=distribution,
+            )
+        )
+    charts.append(
+        _monthly_distribution_chart(
+            chart_id="micro_monthly_combined",
+            title="Rozkład wymazów według miesiąca — wszystkie lata",
+            distribution=result.combined_distribution,
+        )
+    )
+    return tuple(charts)
+
+
+def _culture_counts_for_drug(
+    result: PreSwabDrugsResult,
+    drug_label: str,
+) -> tuple[tuple[str, float], ...]:
+    rows = [
+        row
+        for row in result.drug_culture_crosstab
+        if row.drug_label == drug_label and row.count > 0
+    ]
+    rows.sort(key=lambda row: (-row.count, row.culture_outcome))
+    return tuple((row.culture_outcome, float(row.count)) for row in rows)
+
+
+def _treatment_status_stacked_series(
+    result: PreSwabDrugsResult,
+) -> tuple[tuple[str, ...], tuple[tuple[float, ...], ...]]:
+    counts: dict[tuple[str, str], int] = {
+        (row.treatment_status_label, row.culture_outcome): row.count
+        for row in result.treatment_status_culture_crosstab
+    }
+    series_values: list[tuple[float, ...]] = []
+    present_outcomes: list[str] = []
+    for culture_outcome in CULTURE_OUTCOME_ORDER:
+        values = tuple(
+            float(counts.get((treatment_status, culture_outcome), 0))
+            for treatment_status in TREATMENT_STATUS_ORDER
+        )
+        if any(value > 0 for value in values):
+            present_outcomes.append(culture_outcome)
+            series_values.append(values)
+    return tuple(present_outcomes), tuple(series_values)
+
+
+def build_pre_swab_drugs_charts(
+    result: PreSwabDrugsResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success or result.total_clinical_rows == 0:
+        return ()
+
+    charts: list[AnalysisChartSpec] = []
+
+    if result.top_drugs:
+        top_rows = result.top_drugs[:8]
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="pre_swab_top_drugs",
+                title="Najczęściej stosowane leki przed wymazem",
+                subtitle="Liczba wystąpień znormalizowanych nazw leków",
+                chart_type="bar",
+                labels=tuple(row.drug_label for row in top_rows),
+                values=tuple(float(row.count) for row in top_rows),
+                x_axis_label="Lek",
+                y_axis_label="Liczba wystąpień",
+            )
+        )
+
+    treatment_buckets = (
+        ("Brak leczenia (x)", float(result.no_prior_treatment_count)),
+        ("Nieznany wpis leku", float(result.unknown_drug_count)),
+        ("Podano lek", float(result.with_known_drugs_count)),
+    )
+    if any(value > 0 for _, value in treatment_buckets):
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="pre_swab_treatment_buckets",
+                title="Status leczenia przed wymazem",
+                subtitle="Podział wierszy clinical według pola drug_used_before_micro",
+                chart_type="bar",
+                labels=tuple(label for label, _ in treatment_buckets),
+                values=tuple(value for _, value in treatment_buckets),
+                x_axis_label="Kategoria",
+                y_axis_label="Liczba przypadków",
+            )
+        )
+
+    if result.culture_outcomes:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="pre_swab_culture_outcomes",
+                title="Wyniki posiewu w dopasowanych przypadkach",
+                subtitle="Klasyfikacja wyniku mikrobiologicznego po dopasowaniu clinical–micro",
+                chart_type="bar",
+                labels=tuple(row.outcome_label for row in result.culture_outcomes),
+                values=tuple(float(row.count) for row in result.culture_outcomes),
+                x_axis_label="Wynik posiewu",
+                y_axis_label="Liczba przypadków",
+            )
+        )
+
+    if result.top_drugs and result.drug_culture_crosstab:
+        top_drug = result.top_drugs[0].drug_label
+        culture_counts = _culture_counts_for_drug(result, top_drug)
+        if culture_counts:
+            charts.append(
+                AnalysisChartSpec(
+                    chart_id="pre_swab_top_drug_culture",
+                    title=f"Wynik posiewu a lek przed wymazem — {top_drug}",
+                    subtitle="Rozkład wyników posiewu dla najczęściej stosowanego leku",
+                    chart_type="bar",
+                    labels=tuple(label for label, _ in culture_counts),
+                    values=tuple(value for _, value in culture_counts),
+                    x_axis_label="Wynik posiewu",
+                    y_axis_label="Liczba przypadków",
+                )
+            )
+
+    no_prior_counts = _culture_counts_for_drug(result, NO_PRIOR_TREATMENT_LABEL)
+    if no_prior_counts:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="pre_swab_no_prior_culture",
+                title="Wynik posiewu bez leczenia przed wymazem",
+                subtitle="Przypadki z wartością x w polu drug_used_before_micro",
+                chart_type="bar",
+                labels=tuple(label for label, _ in no_prior_counts),
+                values=tuple(value for _, value in no_prior_counts),
+                x_axis_label="Wynik posiewu",
+                y_axis_label="Liczba przypadków",
+            )
+        )
+
+    if result.treatment_status_culture_crosstab:
+        outcome_labels, series_values = _treatment_status_stacked_series(result)
+        if outcome_labels:
+            charts.append(
+                AnalysisChartSpec(
+                    chart_id="pre_swab_treatment_status_culture",
+                    title="Status leczenia przed wymazem a wynik posiewu",
+                    subtitle=(
+                        "Skumulowany rozkład wyników posiewu w dopasowanych "
+                        "przypadkach według statusu leczenia"
+                    ),
+                    chart_type="stacked_bar",
+                    labels=TREATMENT_STATUS_ORDER,
+                    values=(),
+                    stacked_series_labels=outcome_labels,
+                    stacked_series_values=series_values,
+                    x_axis_label="Status leczenia przed wymazem",
+                    y_axis_label="Liczba przypadków",
+                )
+            )
 
     return tuple(charts)

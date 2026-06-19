@@ -9,9 +9,11 @@ from vetstats_app.analysis.patient_history import (
     TREATMENT_DURATION_DISPLAY_COLUMN,
     TREATMENT_DURATION_NO_FOLLOWUP,
     TREATMENT_DURATION_UNAVAILABLE,
-    _decompose_calendar_duration,
-    _format_treatment_duration_text,
     build_patient_history_detail,
+)
+from vetstats_app.analysis.treatment_cases import (
+    _decompose_calendar_duration,
+    format_treatment_duration_text,
 )
 
 
@@ -67,7 +69,7 @@ def test_decompose_calendar_duration_example() -> None:
 def test_format_treatment_duration_good_without_date_last_appointment() -> None:
     from datetime import date
 
-    text = _format_treatment_duration_text(
+    text = format_treatment_duration_text(
         terminal_status="good",
         is_intermediate_continuation=False,
         start_date=date(2025, 1, 3),
@@ -79,7 +81,7 @@ def test_format_treatment_duration_good_without_date_last_appointment() -> None:
 def test_format_treatment_duration_same_day_good_with_date_last_appointment() -> None:
     from datetime import date
 
-    text = _format_treatment_duration_text(
+    text = format_treatment_duration_text(
         terminal_status="good",
         is_intermediate_continuation=False,
         start_date=date(2025, 1, 3),
@@ -91,7 +93,7 @@ def test_format_treatment_duration_same_day_good_with_date_last_appointment() ->
 def test_format_treatment_duration_enucleation_suffix() -> None:
     from datetime import date
 
-    text = _format_treatment_duration_text(
+    text = format_treatment_duration_text(
         terminal_status="enucleation",
         is_intermediate_continuation=False,
         start_date=date(2024, 9, 1),
@@ -101,7 +103,7 @@ def test_format_treatment_duration_enucleation_suffix() -> None:
 
 
 def test_format_treatment_duration_continuation_terminal() -> None:
-    text = _format_treatment_duration_text(
+    text = format_treatment_duration_text(
         terminal_status="continuation",
         is_intermediate_continuation=False,
         start_date=None,
