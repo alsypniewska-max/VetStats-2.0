@@ -40,6 +40,9 @@ from vetstats_app.analysis.pre_swab_drugs import (
     TREATMENT_STATUS_ORDER,
 )
 from vetstats_app.analysis.breed_treatment_duration import BreedTreatmentDurationResult
+from vetstats_app.analysis.ulcer_breed_treatment_duration import (
+    UlcerBreedTreatmentDurationResult,
+)
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -905,6 +908,129 @@ def build_breed_treatment_duration_charts(
                 ),
                 x_axis_label="Rasa",
                 y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    return tuple(charts)
+
+
+def build_ulcer_breed_treatment_duration_charts(
+    result: UlcerBreedTreatmentDurationResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success:
+        return ()
+
+    charts: list[AnalysisChartSpec] = []
+
+    if result.dog_ulcer_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ulcer_breed_dog_ulcer_types_box",
+                title="Czas leczenia według typu wrzodu — psy",
+                subtitle="Wykres pudełkowy rozkładu czasu leczenia według typu wrzodu",
+                chart_type="box",
+                labels=tuple(group.ulcer_label for group in result.dog_ulcer_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.dog_ulcer_value_groups
+                ),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    if result.cat_ulcer_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ulcer_breed_cat_ulcer_types_box",
+                title="Czas leczenia według typu wrzodu — koty",
+                subtitle="Wykres pudełkowy rozkładu czasu leczenia według typu wrzodu",
+                chart_type="box",
+                labels=tuple(group.ulcer_label for group in result.cat_ulcer_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.cat_ulcer_value_groups
+                ),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    if result.dog_breed_ulcer_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ulcer_breed_dog_top_breed_ulcer_box",
+                title="Czas leczenia — najliczniejsze pary rasa×typ wrzodu (psy)",
+                subtitle="Grupy n≥3; wykres pudełkowy",
+                chart_type="box",
+                labels=tuple(
+                    f"{group.breed_label} — {group.ulcer_label}"
+                    for group in result.dog_breed_ulcer_value_groups
+                ),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.dog_breed_ulcer_value_groups
+                ),
+                x_axis_label="Rasa — typ wrzodu",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    if result.cat_breed_ulcer_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ulcer_breed_cat_top_breed_ulcer_box",
+                title="Czas leczenia — najliczniejsze pary rasa×typ wrzodu (koty)",
+                subtitle="Grupy n≥3; wykres pudełkowy",
+                chart_type="box",
+                labels=tuple(
+                    f"{group.breed_label} — {group.ulcer_label}"
+                    for group in result.cat_breed_ulcer_value_groups
+                ),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.cat_breed_ulcer_value_groups
+                ),
+                x_axis_label="Rasa — typ wrzodu",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    observed_dog_ulcers = [
+        row
+        for row in result.dog_ulcer_types
+        if row.count > 0 and row.median_days is not None and row.mean_days is not None
+    ]
+    if observed_dog_ulcers:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ulcer_breed_dog_ulcer_median_bar",
+                title="Mediana czasu leczenia według typu wrzodu — psy",
+                subtitle="Wartość medianowa (mediana) w dniach",
+                chart_type="bar",
+                labels=tuple(row.ulcer_label for row in observed_dog_ulcers),
+                values=tuple(float(row.median_days) for row in observed_dog_ulcers),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Mediana (dni)",
+            )
+        )
+
+    observed_cat_ulcers = [
+        row
+        for row in result.cat_ulcer_types
+        if row.count > 0 and row.median_days is not None and row.mean_days is not None
+    ]
+    if observed_cat_ulcers:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ulcer_breed_cat_ulcer_median_bar",
+                title="Mediana czasu leczenia według typu wrzodu — koty",
+                subtitle="Wartość medianowa (mediana) w dniach",
+                chart_type="bar",
+                labels=tuple(row.ulcer_label for row in observed_cat_ulcers),
+                values=tuple(float(row.median_days) for row in observed_cat_ulcers),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Mediana (dni)",
             )
         )
 

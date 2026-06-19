@@ -385,7 +385,13 @@ def build_descriptive_stats_block(
             ("Mediana (dni)", format_optional_number(result.overall_median_days)),
             ("Percentyl 25 (dni)", format_optional_number(result.overall_percentile_25_days)),
             ("Percentyl 75 (dni)", format_optional_number(result.overall_percentile_75_days)),
-            ("Najkrótszy typ wrzodu (mediana)", result.shortest_ulcer_label or "—"),
-            ("Najdłuższy typ wrzodu (mediana)", result.longest_ulcer_label or "—"),
+            (
+                "Typ wrzodu z najkrótszym czasem trwania problemu przed wizytą",
+                result.shortest_ulcer_label or "—",
+            ),
+            (
+                "Typ wrzodu z najdłuższym czasem trwania problemu przed wizytą",
+                result.longest_ulcer_label or "—",
+            ),
         ),
     )

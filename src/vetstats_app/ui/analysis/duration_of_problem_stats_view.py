@@ -66,6 +66,37 @@ def _finalize_table(table: QTableWidget) -> None:
     table.setMaximumWidth(total_width)
 
 
+def _finalize_descriptive_stats_table(table: QTableWidget) -> None:
+    table.setWordWrap(False)
+    header = table.horizontalHeader()
+    header.setStretchLastSection(False)
+    for column_index in range(table.columnCount()):
+        header.setSectionResizeMode(
+            column_index,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+
+    metrics = table.fontMetrics()
+    max_label_width = 0
+    for row_index in range(table.rowCount()):
+        item = table.item(row_index, 0)
+        if item is not None:
+            max_label_width = max(
+                max_label_width,
+                metrics.horizontalAdvance(item.text()),
+            )
+    if max_label_width > 0:
+        table.setColumnWidth(0, max_label_width + 12)
+
+    finalize_reference_table(table)
+
+    total_width = table.frameWidth() * 2
+    for column_index in range(table.columnCount()):
+        total_width += table.columnWidth(column_index)
+    table.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
+    table.setMaximumWidth(total_width + 8)
+
+
 class DurationOfProblemStatsView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -108,7 +139,7 @@ class DurationOfProblemStatsView(QWidget):
         for row_index, row in enumerate(stats_block.rows):
             for column_index, value in enumerate(row):
                 stats_table.setItem(row_index, column_index, QTableWidgetItem(value))
-        _finalize_table(stats_table)
+        _finalize_descriptive_stats_table(stats_table)
         stats_layout.addWidget(stats_table)
         content_layout.addWidget(stats_group)
 

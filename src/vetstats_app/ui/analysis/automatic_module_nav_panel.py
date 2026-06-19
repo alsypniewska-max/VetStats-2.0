@@ -12,6 +12,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Analiza zależności między zabiegiem a rozpoznaniem",
     "Powiązanie leczenia z typem wrzodu",
     "Rasa a czas leczenia",
+    "Typ wrzodu a czas leczenia w obrębie ras",
     "Czas trwania problemu przed pierwszą wizytą",
     "Rozkład wymazów w miesiącach i latach",
     "Leki stosowane przed wymazem",

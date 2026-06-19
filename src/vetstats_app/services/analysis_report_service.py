@@ -15,6 +15,7 @@ from vetstats_app.analysis.chart_specs import (
     build_micro_monthly_distribution_charts,
     build_pre_swab_drugs_charts,
     build_breed_treatment_duration_charts,
+    build_ulcer_breed_treatment_duration_charts,
 )
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
@@ -46,6 +47,17 @@ from vetstats_app.analysis.breed_treatment_duration import (
     exclusions_table_block,
     species_summary_table_block,
     statistical_tests_table_block,
+)
+from vetstats_app.analysis.ulcer_breed_treatment_duration import (
+    UlcerBreedTreatmentDurationResult,
+    build_descriptive_stats_block as build_ulcer_breed_treatment_duration_descriptive_stats_block,
+    build_interpretation_summary as build_ulcer_breed_treatment_duration_interpretation,
+    build_summary_details as build_ulcer_breed_treatment_duration_summary_details,
+    cat_breed_ulcer_table_block,
+    cat_ulcer_types_table_block,
+    dog_breed_ulcer_table_block,
+    dog_ulcer_types_table_block,
+    exclusions_table_block as ulcer_breed_exclusions_table_block,
 )
 from vetstats_app.analysis.pre_swab_drugs import (
     PreSwabDrugsResult,
@@ -398,6 +410,33 @@ class AnalysisReportService:
             interpretation_summary=build_breed_treatment_duration_interpretation(result),
             table_blocks=tuple(table_blocks),
             chart_specs=build_breed_treatment_duration_charts(result),
+        )
+
+    def build_ulcer_breed_treatment_duration_payload(
+        self,
+        result: UlcerBreedTreatmentDurationResult,
+    ) -> AnalysisSectionPayload:
+        table_blocks = [
+            build_ulcer_breed_treatment_duration_descriptive_stats_block(result),
+            ulcer_breed_exclusions_table_block(result),
+        ]
+        if result.dog_ulcer_types:
+            table_blocks.append(dog_ulcer_types_table_block(result))
+        if result.cat_ulcer_types:
+            table_blocks.append(cat_ulcer_types_table_block(result))
+        if result.dog_breed_ulcer_rows:
+            table_blocks.append(dog_breed_ulcer_table_block(result))
+        if result.cat_breed_ulcer_rows:
+            table_blocks.append(cat_breed_ulcer_table_block(result))
+        return AnalysisSectionPayload(
+            section_title="Typ wrzodu a czas leczenia w obrębie ras",
+            source_labels=(result.source_clinical_label, result.source_patient_label),
+            summary_details=build_ulcer_breed_treatment_duration_summary_details(result),
+            interpretation_summary=build_ulcer_breed_treatment_duration_interpretation(
+                result
+            ),
+            table_blocks=tuple(table_blocks),
+            chart_specs=build_ulcer_breed_treatment_duration_charts(result),
         )
 
     def build_microbiology_results_payload(
@@ -809,6 +848,22 @@ class AnalysisReportService:
         destination: Path,
     ) -> str | None:
         report = self.prepare_breed_treatment_duration_report(result)
+        return self.export_section_report_pdf(report, destination)
+
+    def prepare_ulcer_breed_treatment_duration_report(
+        self,
+        result: UlcerBreedTreatmentDurationResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_ulcer_breed_treatment_duration_payload(result)
+        )
+
+    def export_ulcer_breed_treatment_duration_report_pdf(
+        self,
+        result: UlcerBreedTreatmentDurationResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_ulcer_breed_treatment_duration_report(result)
         return self.export_section_report_pdf(report, destination)
 
     def export_diagnosis_frequency_report(
