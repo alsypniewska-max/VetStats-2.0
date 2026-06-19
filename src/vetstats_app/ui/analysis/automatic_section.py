@@ -1,6 +1,9 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QScrollArea, QStackedWidget, QVBoxLayout, QWidget
 
+from vetstats_app.ui.analysis.breed_treatment_duration_view import (
+    BreedTreatmentDurationView,
+)
 from vetstats_app.ui.analysis.diagnosis_culture_relationship_view import (
     DiagnosisCultureRelationshipView,
 )
@@ -45,6 +48,7 @@ class AutomaticAnalysisSection(QWidget):
             DiagnosisCultureRelationshipView(),
             ProcedureDiagnosisRelationshipView(),
             TreatmentDiagnosisRelationshipView(),
+            BreedTreatmentDurationView(),
             DurationOfProblemStatsView(),
             MicroMonthlyDistributionView(),
             PreSwabDrugsView(),

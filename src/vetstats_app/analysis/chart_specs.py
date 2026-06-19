@@ -39,6 +39,7 @@ from vetstats_app.analysis.pre_swab_drugs import (
     PreSwabDrugsResult,
     TREATMENT_STATUS_ORDER,
 )
+from vetstats_app.analysis.breed_treatment_duration import BreedTreatmentDurationResult
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -838,5 +839,73 @@ def build_pre_swab_drugs_charts(
                     y_axis_label="Liczba przypadków",
                 )
             )
+
+    return tuple(charts)
+
+
+def build_breed_treatment_duration_charts(
+    result: BreedTreatmentDurationResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success:
+        return ()
+
+    charts: list[AnalysisChartSpec] = []
+
+    species_groups: list[tuple[float, ...]] = []
+    species_labels: list[str] = []
+    if result.dog_duration_days:
+        species_groups.append(result.dog_duration_days)
+        species_labels.append("Psy")
+    if result.cat_duration_days:
+        species_groups.append(result.cat_duration_days)
+        species_labels.append("Koty")
+    if species_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="breed_treatment_species_box",
+                title="Czas leczenia uleczonych wrzodów — psy i koty",
+                subtitle="Wykres pudełkowy rozkładu czasu leczenia według gatunku",
+                chart_type="box",
+                labels=tuple(species_labels),
+                values=(),
+                box_plot_groups=tuple(species_groups),
+                x_axis_label="Gatunek",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    if result.dog_breed_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="breed_treatment_dog_breeds_box",
+                title="Czas leczenia według rasy — psy",
+                subtitle="Najczęstsze rasy (wykres pudełkowy)",
+                chart_type="box",
+                labels=tuple(group.breed_label for group in result.dog_breed_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.dog_breed_value_groups
+                ),
+                x_axis_label="Rasa",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    if result.cat_breed_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="breed_treatment_cat_breeds_box",
+                title="Czas leczenia według rasy — koty",
+                subtitle="Najczęstsze rasy (wykres pudełkowy)",
+                chart_type="box",
+                labels=tuple(group.breed_label for group in result.cat_breed_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.cat_breed_value_groups
+                ),
+                x_axis_label="Rasa",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
 
     return tuple(charts)

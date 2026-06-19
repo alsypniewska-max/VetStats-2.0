@@ -98,6 +98,59 @@ class DurationSummaryStats:
     percentile_75: float | None
 
 
+@dataclass(frozen=True)
+class ExtendedDurationSummaryStats:
+    count: int
+    mean_days: float | None
+    median_days: float | None
+    min_days: float | None
+    max_days: float | None
+    percentile_25_days: float | None
+    percentile_75_days: float | None
+
+
+def summarize_duration_values_extended(
+    values: tuple[float, ...],
+) -> ExtendedDurationSummaryStats:
+    if not values:
+        return ExtendedDurationSummaryStats(0, None, None, None, None, None, None)
+
+    sorted_values = sorted(values)
+    base = summarize_duration_values(values)
+    return ExtendedDurationSummaryStats(
+        count=base.count,
+        mean_days=base.mean,
+        median_days=base.median,
+        min_days=sorted_values[0],
+        max_days=sorted_values[-1],
+        percentile_25_days=base.percentile_25,
+        percentile_75_days=base.percentile_75,
+    )
+
+
+def build_patient_species_breed_lookup(
+    patient: pd.DataFrame,
+) -> dict[str, tuple[object, object]]:
+    from data_sterilizer.schemas.patient import PATIENT_ID_COLUMN
+    from vetstats_app.analysis.patient_id_cross_table_summary import normalize_patient_id
+
+    patient_id_col = resolve_column(patient, PATIENT_ID_COLUMN)
+    species_col = resolve_column(patient, "species")
+    breed_col = resolve_column(patient, "breed")
+    if patient_id_col is None:
+        return {}
+
+    lookup: dict[str, tuple[object, object]] = {}
+    for _, row in patient.iterrows():
+        patient_id = normalize_patient_id(row[patient_id_col])
+        if patient_id is None:
+            continue
+        species_value = row[species_col] if species_col is not None else None
+        breed_value = row[breed_col] if breed_col is not None else None
+        lookup[patient_id] = (species_value, breed_value)
+    return lookup
+
+
 def summarize_duration_values(values: tuple[float, ...]) -> DurationSummaryStats:
     if not values:
         return DurationSummaryStats(0, None, None, None, None)

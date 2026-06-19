@@ -14,6 +14,7 @@ from vetstats_app.analysis.chart_specs import (
     build_duration_of_problem_stats_charts,
     build_micro_monthly_distribution_charts,
     build_pre_swab_drugs_charts,
+    build_breed_treatment_duration_charts,
 )
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
@@ -34,6 +35,17 @@ from vetstats_app.analysis.micro_monthly_distribution import (
     build_interpretation_summary as build_micro_monthly_interpretation,
     build_summary_details as build_micro_monthly_summary_details,
     monthly_distribution_table_block,
+)
+from vetstats_app.analysis.breed_treatment_duration import (
+    BreedTreatmentDurationResult,
+    build_descriptive_stats_block as build_breed_treatment_duration_descriptive_stats_block,
+    build_interpretation_summary as build_breed_treatment_duration_interpretation,
+    build_summary_details as build_breed_treatment_duration_summary_details,
+    cat_breeds_table_block,
+    dog_breeds_table_block,
+    exclusions_table_block,
+    species_summary_table_block,
+    statistical_tests_table_block,
 )
 from vetstats_app.analysis.pre_swab_drugs import (
     PreSwabDrugsResult,
@@ -361,6 +373,31 @@ class AnalysisReportService:
             interpretation_summary=build_pre_swab_drugs_interpretation(result),
             table_blocks=tuple(table_blocks),
             chart_specs=build_pre_swab_drugs_charts(result),
+        )
+
+    def build_breed_treatment_duration_payload(
+        self,
+        result: BreedTreatmentDurationResult,
+    ) -> AnalysisSectionPayload:
+        table_blocks = [
+            build_breed_treatment_duration_descriptive_stats_block(result),
+            exclusions_table_block(result),
+        ]
+        if result.dog_summary or result.cat_summary:
+            table_blocks.append(species_summary_table_block(result))
+        if result.dog_breeds:
+            table_blocks.append(dog_breeds_table_block(result))
+        if result.cat_breeds:
+            table_blocks.append(cat_breeds_table_block(result))
+        if result.statistical_tests:
+            table_blocks.append(statistical_tests_table_block(result))
+        return AnalysisSectionPayload(
+            section_title="Rasa a czas leczenia",
+            source_labels=(result.source_clinical_label, result.source_patient_label),
+            summary_details=build_breed_treatment_duration_summary_details(result),
+            interpretation_summary=build_breed_treatment_duration_interpretation(result),
+            table_blocks=tuple(table_blocks),
+            chart_specs=build_breed_treatment_duration_charts(result),
         )
 
     def build_microbiology_results_payload(
@@ -756,6 +793,22 @@ class AnalysisReportService:
         destination: Path,
     ) -> str | None:
         report = self.prepare_pre_swab_drugs_report(result)
+        return self.export_section_report_pdf(report, destination)
+
+    def prepare_breed_treatment_duration_report(
+        self,
+        result: BreedTreatmentDurationResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_breed_treatment_duration_payload(result)
+        )
+
+    def export_breed_treatment_duration_report_pdf(
+        self,
+        result: BreedTreatmentDurationResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_breed_treatment_duration_report(result)
         return self.export_section_report_pdf(report, destination)
 
     def export_diagnosis_frequency_report(
