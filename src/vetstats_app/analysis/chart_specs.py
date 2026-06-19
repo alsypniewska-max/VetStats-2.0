@@ -43,6 +43,7 @@ from vetstats_app.analysis.breed_treatment_duration import BreedTreatmentDuratio
 from vetstats_app.analysis.ulcer_breed_treatment_duration import (
     UlcerBreedTreatmentDurationResult,
 )
+from vetstats_app.analysis.ems_treatment_duration import EmsTreatmentDurationResult
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -1031,6 +1032,155 @@ def build_ulcer_breed_treatment_duration_charts(
                 values=tuple(float(row.median_days) for row in observed_cat_ulcers),
                 x_axis_label="Typ wrzodu",
                 y_axis_label="Mediana (dni)",
+            )
+        )
+
+    return tuple(charts)
+
+
+def build_ems_treatment_duration_charts(
+    result: EmsTreatmentDurationResult,
+) -> tuple[AnalysisChartSpec, ...]:
+    if not result.is_success:
+        return ()
+
+    charts: list[AnalysisChartSpec] = []
+
+    if result.overall_ems_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_overall_box",
+                title="Czas leczenia — EMS tak vs EMS nie (łącznie)",
+                subtitle="Wykres pudełkowy dla psów i kotów łącznie",
+                chart_type="box",
+                labels=tuple(group.group_label for group in result.overall_ems_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.overall_ems_value_groups
+                ),
+                x_axis_label="EMS",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    observed_pooled = [
+        row
+        for row in result.pooled_ulcer_grouped_bars
+        if row.ems_yes_median is not None and row.ems_no_median is not None
+    ]
+    if observed_pooled:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_pooled_ulcer_grouped_bar",
+                title="Mediana czasu leczenia według typu wrzodu — EMS tak vs EMS nie",
+                subtitle="Łącznie (psy i koty); mediana w dniach",
+                chart_type="grouped_bar",
+                labels=tuple(row.ulcer_label for row in observed_pooled),
+                values=tuple(float(row.ems_yes_median) for row in observed_pooled),
+                secondary_values=tuple(float(row.ems_no_median) for row in observed_pooled),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Mediana (dni)",
+                legend_note="EMS tak / EMS nie",
+            )
+        )
+
+    if result.dog_ems_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_dog_overall_box",
+                title="Czas leczenia — EMS tak vs EMS nie (psy)",
+                subtitle="Wykres pudełkowy",
+                chart_type="box",
+                labels=tuple(group.group_label for group in result.dog_ems_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.dog_ems_value_groups
+                ),
+                x_axis_label="EMS",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    if result.cat_ems_value_groups:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_cat_overall_box",
+                title="Czas leczenia — EMS tak vs EMS nie (koty)",
+                subtitle="Wykres pudełkowy",
+                chart_type="box",
+                labels=tuple(group.group_label for group in result.cat_ems_value_groups),
+                values=(),
+                box_plot_groups=tuple(
+                    group.duration_days for group in result.cat_ems_value_groups
+                ),
+                x_axis_label="EMS",
+                y_axis_label="Czas leczenia (dni)",
+            )
+        )
+
+    observed_dog_ulcers = [
+        row
+        for row in result.dog_ulcer_grouped_bars
+        if row.ems_yes_median is not None and row.ems_no_median is not None
+    ]
+    if observed_dog_ulcers:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_dog_ulcer_grouped_bar",
+                title="Mediana czasu leczenia według typu wrzodu — psy",
+                subtitle="EMS tak vs EMS nie; mediana w dniach",
+                chart_type="grouped_bar",
+                labels=tuple(row.ulcer_label for row in observed_dog_ulcers),
+                values=tuple(float(row.ems_yes_median) for row in observed_dog_ulcers),
+                secondary_values=tuple(float(row.ems_no_median) for row in observed_dog_ulcers),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Mediana (dni)",
+                legend_note="EMS tak / EMS nie",
+            )
+        )
+
+    observed_cat_ulcers = [
+        row
+        for row in result.cat_ulcer_grouped_bars
+        if row.ems_yes_median is not None and row.ems_no_median is not None
+    ]
+    if observed_cat_ulcers:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_cat_ulcer_grouped_bar",
+                title="Mediana czasu leczenia według typu wrzodu — koty",
+                subtitle="EMS tak vs EMS nie; mediana w dniach",
+                chart_type="grouped_bar",
+                labels=tuple(row.ulcer_label for row in observed_cat_ulcers),
+                values=tuple(float(row.ems_yes_median) for row in observed_cat_ulcers),
+                secondary_values=tuple(float(row.ems_no_median) for row in observed_cat_ulcers),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Mediana (dni)",
+                legend_note="EMS tak / EMS nie",
+            )
+        )
+
+    breed_rows = [
+        comparison
+        for comparison in result.dog_breed_comparisons
+        if comparison.ems_yes is not None
+        and comparison.ems_no is not None
+        and comparison.ems_yes.median_days is not None
+        and comparison.ems_no.median_days is not None
+    ][:8]
+    if breed_rows:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_treatment_dog_breed_grouped_bar",
+                title="Mediana czasu leczenia według rasy — psy",
+                subtitle="EMS tak vs EMS nie; najliczniejsze rasy",
+                chart_type="grouped_bar",
+                labels=tuple(row.breed_label for row in breed_rows),
+                values=tuple(float(row.ems_yes.median_days) for row in breed_rows),
+                secondary_values=tuple(float(row.ems_no.median_days) for row in breed_rows),
+                x_axis_label="Rasa",
+                y_axis_label="Mediana (dni)",
+                legend_note="EMS tak / EMS nie",
             )
         )
 

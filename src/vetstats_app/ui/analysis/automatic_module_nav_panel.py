@@ -13,6 +13,7 @@ AUTOMATIC_MODULE_LABELS = [
     "Powiązanie leczenia z typem wrzodu",
     "Rasa a czas leczenia",
     "Typ wrzodu a czas leczenia w obrębie ras",
+    "Stosowanie EMS a czas leczenia",
     "Czas trwania problemu przed pierwszą wizytą",
     "Rozkład wymazów w miesiącach i latach",
     "Leki stosowane przed wymazem",

@@ -75,6 +75,20 @@ def normalize_breed(value: object) -> str | None:
     return text
 
 
+def normalize_ems(value: object) -> str | None:
+    text = normalize_text(value)
+    if text in {"yes", "no"}:
+        return text
+    return None
+
+
+def normalize_farmacology_surgery(value: object) -> str | None:
+    text = normalize_text(value)
+    if text in {"f", "s"}:
+        return text
+    return None
+
+
 def parse_clinical_dmy_date(value: object) -> date | None:
     text = format_display_value(value)
     if text == "nie wiadomo":

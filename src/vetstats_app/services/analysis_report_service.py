@@ -16,6 +16,7 @@ from vetstats_app.analysis.chart_specs import (
     build_pre_swab_drugs_charts,
     build_breed_treatment_duration_charts,
     build_ulcer_breed_treatment_duration_charts,
+    build_ems_treatment_duration_charts,
 )
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_CODE_MAPPING,
@@ -58,6 +59,21 @@ from vetstats_app.analysis.ulcer_breed_treatment_duration import (
     dog_breed_ulcer_table_block,
     dog_ulcer_types_table_block,
     exclusions_table_block as ulcer_breed_exclusions_table_block,
+)
+from vetstats_app.analysis.ems_treatment_duration import (
+    EmsTreatmentDurationResult,
+    build_descriptive_stats_block as build_ems_treatment_duration_descriptive_stats_block,
+    build_interpretation_summary as build_ems_treatment_duration_interpretation,
+    build_summary_details as build_ems_treatment_duration_summary_details,
+    cat_overall_comparison_table_block,
+    cat_ulcer_comparison_table_block,
+    dog_breed_comparison_table_block,
+    dog_overall_comparison_table_block,
+    dog_ulcer_comparison_table_block,
+    exclusions_table_block as ems_exclusions_table_block,
+    overall_comparison_table_block,
+    statistical_tests_table_block as ems_statistical_tests_table_block,
+    ulcer_comparison_table_block,
 )
 from vetstats_app.analysis.pre_swab_drugs import (
     PreSwabDrugsResult,
@@ -437,6 +453,46 @@ class AnalysisReportService:
             ),
             table_blocks=tuple(table_blocks),
             chart_specs=build_ulcer_breed_treatment_duration_charts(result),
+        )
+
+    def build_ems_treatment_duration_payload(
+        self,
+        result: EmsTreatmentDurationResult,
+    ) -> AnalysisSectionPayload:
+        table_blocks = [
+            build_ems_treatment_duration_descriptive_stats_block(result),
+            ems_exclusions_table_block(result),
+        ]
+        overall_block = overall_comparison_table_block(result)
+        if overall_block.rows:
+            table_blocks.append(overall_block)
+        ulcer_block = ulcer_comparison_table_block(result)
+        if ulcer_block.rows:
+            table_blocks.append(ulcer_block)
+        dog_overall_block = dog_overall_comparison_table_block(result)
+        if dog_overall_block.rows:
+            table_blocks.append(dog_overall_block)
+        dog_ulcer_block = dog_ulcer_comparison_table_block(result)
+        if dog_ulcer_block.rows:
+            table_blocks.append(dog_ulcer_block)
+        cat_overall_block = cat_overall_comparison_table_block(result)
+        if cat_overall_block.rows:
+            table_blocks.append(cat_overall_block)
+        cat_ulcer_block = cat_ulcer_comparison_table_block(result)
+        if cat_ulcer_block.rows:
+            table_blocks.append(cat_ulcer_block)
+        dog_breed_block = dog_breed_comparison_table_block(result)
+        if dog_breed_block.rows:
+            table_blocks.append(dog_breed_block)
+        if result.statistical_tests:
+            table_blocks.append(ems_statistical_tests_table_block(result))
+        return AnalysisSectionPayload(
+            section_title="Stosowanie EMS a czas leczenia",
+            source_labels=(result.source_clinical_label, result.source_patient_label),
+            summary_details=build_ems_treatment_duration_summary_details(result),
+            interpretation_summary=build_ems_treatment_duration_interpretation(result),
+            table_blocks=tuple(table_blocks),
+            chart_specs=build_ems_treatment_duration_charts(result),
         )
 
     def build_microbiology_results_payload(
@@ -864,6 +920,22 @@ class AnalysisReportService:
         destination: Path,
     ) -> str | None:
         report = self.prepare_ulcer_breed_treatment_duration_report(result)
+        return self.export_section_report_pdf(report, destination)
+
+    def prepare_ems_treatment_duration_report(
+        self,
+        result: EmsTreatmentDurationResult,
+    ) -> AnalysisSectionReport:
+        return self.build_section_report(
+            self.build_ems_treatment_duration_payload(result)
+        )
+
+    def export_ems_treatment_duration_report_pdf(
+        self,
+        result: EmsTreatmentDurationResult,
+        destination: Path,
+    ) -> str | None:
+        report = self.prepare_ems_treatment_duration_report(result)
         return self.export_section_report_pdf(report, destination)
 
     def export_diagnosis_frequency_report(

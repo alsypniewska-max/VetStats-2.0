@@ -7,6 +7,9 @@ from vetstats_app.ui.analysis.breed_treatment_duration_view import (
 from vetstats_app.ui.analysis.ulcer_breed_treatment_duration_view import (
     UlcerBreedTreatmentDurationView,
 )
+from vetstats_app.ui.analysis.ems_treatment_duration_view import (
+    EmsTreatmentDurationView,
+)
 from vetstats_app.ui.analysis.diagnosis_culture_relationship_view import (
     DiagnosisCultureRelationshipView,
 )
@@ -53,6 +56,7 @@ class AutomaticAnalysisSection(QWidget):
             TreatmentDiagnosisRelationshipView(),
             BreedTreatmentDurationView(),
             UlcerBreedTreatmentDurationView(),
+            EmsTreatmentDurationView(),
             DurationOfProblemStatsView(),
             MicroMonthlyDistributionView(),
             PreSwabDrugsView(),
