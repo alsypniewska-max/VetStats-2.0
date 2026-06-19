@@ -64,6 +64,7 @@ from vetstats_app.analysis.ems_treatment_duration import (
     EmsTreatmentDurationResult,
     build_descriptive_stats_block as build_ems_treatment_duration_descriptive_stats_block,
     build_interpretation_summary as build_ems_treatment_duration_interpretation,
+    build_surgery_rate_interpretation_summary as build_ems_surgery_rate_interpretation,
     build_summary_details as build_ems_treatment_duration_summary_details,
     cat_overall_comparison_table_block,
     cat_ulcer_comparison_table_block,
@@ -73,6 +74,9 @@ from vetstats_app.analysis.ems_treatment_duration import (
     exclusions_table_block as ems_exclusions_table_block,
     overall_comparison_table_block,
     statistical_tests_table_block as ems_statistical_tests_table_block,
+    surgery_rate_exclusions_table_block as ems_surgery_rate_exclusions_table_block,
+    surgery_rate_summary_table_block as ems_surgery_rate_summary_table_block,
+    surgery_rate_ulcer_table_block as ems_surgery_rate_ulcer_table_block,
     ulcer_comparison_table_block,
 )
 from vetstats_app.analysis.pre_swab_drugs import (
@@ -486,11 +490,23 @@ class AnalysisReportService:
             table_blocks.append(dog_breed_block)
         if result.statistical_tests:
             table_blocks.append(ems_statistical_tests_table_block(result))
+        table_blocks.append(ems_surgery_rate_exclusions_table_block(result))
+        surgery_summary_block = ems_surgery_rate_summary_table_block(result)
+        if surgery_summary_block.rows:
+            table_blocks.append(surgery_summary_block)
+        surgery_ulcer_block = ems_surgery_rate_ulcer_table_block(result)
+        if surgery_ulcer_block.rows:
+            table_blocks.append(surgery_ulcer_block)
+        ems_interpretation = build_ems_treatment_duration_interpretation(result)
+        surgery_interpretation = build_ems_surgery_rate_interpretation(result)
+        interpretation_parts = [ems_interpretation]
+        if surgery_interpretation:
+            interpretation_parts.append(surgery_interpretation)
         return AnalysisSectionPayload(
             section_title="Stosowanie EMS a czas leczenia",
             source_labels=(result.source_clinical_label, result.source_patient_label),
             summary_details=build_ems_treatment_duration_summary_details(result),
-            interpretation_summary=build_ems_treatment_duration_interpretation(result),
+            interpretation_summary="\n\n".join(interpretation_parts),
             table_blocks=tuple(table_blocks),
             chart_specs=build_ems_treatment_duration_charts(result),
         )

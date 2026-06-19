@@ -9,9 +9,11 @@ from vetstats_app.analysis.ems_treatment_duration import (
     MIN_DISPLAY_GROUP_SIZE,
     MIN_TEST_GROUP_SIZE,
     build_interpretation_summary,
+    build_surgery_rate_interpretation_summary,
     compute_ems_treatment_duration,
     dog_overall_comparison_table_block,
     overall_comparison_table_block,
+    surgery_rate_summary_table_block,
 )
 
 
@@ -468,6 +470,10 @@ def test_report_payload_and_pdf_export() -> None:
     assert payload.section_title == "Stosowanie EMS a czas leczenia"
     assert payload.table_blocks
     assert payload.chart_specs
+    table_titles = {block.title for block in payload.table_blocks}
+    assert any("zabiegu" in title.lower() for title in table_titles)
+    chart_ids = {chart.chart_id for chart in payload.chart_specs}
+    assert "ems_surgery_rate_overall_bar" in chart_ids
 
     with tempfile.TemporaryDirectory() as temp_dir:
         destination = Path(temp_dir) / "ems_treatment_duration_report.pdf"
@@ -475,3 +481,155 @@ def test_report_payload_and_pdf_export() -> None:
         assert error is None
         assert destination.is_file()
         assert destination.stat().st_size > 1000
+
+
+def test_surgery_rate_includes_broader_closed_ulcer_cases() -> None:
+    clinical = pd.DataFrame(
+        [
+            _clinical_row(
+                patient_ID="1",
+                farmacology_surgery="s",
+                how_ended="enucleation",
+            ),
+            _clinical_row(patient_ID="2", farmacology_surgery="f", EMS="yes"),
+        ]
+    )
+    patient = pd.DataFrame(
+        [
+            _patient_row(patient_ID="1"),
+            _patient_row(patient_ID="2"),
+        ]
+    )
+
+    result = compute_ems_treatment_duration(clinical, patient)
+
+    assert result.surgery_rate.exclusions.included_broader_cases == 2
+    assert result.surgery_rate.overall_summary is not None
+    assert result.surgery_rate.overall_summary.surgery_count == 1
+    assert result.surgery_rate.overall_summary.pharmacology_only_count == 1
+    assert result.exclusions.included_pharmacological_ems_cases == 1
+
+
+def test_surgery_rate_excludes_invalid_farmacology_values() -> None:
+    clinical = pd.DataFrame(
+        [
+            _clinical_row(patient_ID="1", farmacology_surgery="xxx"),
+            _clinical_row(patient_ID="2", farmacology_surgery="f"),
+        ]
+    )
+    patient = pd.DataFrame(
+        [
+            _patient_row(patient_ID="1"),
+            _patient_row(patient_ID="2"),
+        ]
+    )
+
+    result = compute_ems_treatment_duration(clinical, patient)
+
+    assert result.surgery_rate.exclusions.included_broader_cases == 1
+    assert result.surgery_rate.exclusions.excluded_invalid_farmacology_cases == 1
+
+
+def test_surgery_rate_interpretation_mentions_broader_cohort() -> None:
+    clinical = pd.DataFrame(
+        [
+            _clinical_row(patient_ID="1", farmacology_surgery="s"),
+            _clinical_row(patient_ID="2", farmacology_surgery="f"),
+        ]
+    )
+    patient = pd.DataFrame(
+        [
+            _patient_row(patient_ID="1"),
+            _patient_row(patient_ID="2"),
+        ]
+    )
+
+    result = compute_ems_treatment_duration(clinical, patient)
+    interpretation = build_surgery_rate_interpretation_summary(result).lower()
+
+    assert "szerszej kohort" in interpretation
+    assert "nie jest to ta sama kohorta" in interpretation
+
+
+def test_surgery_rate_charts_generated() -> None:
+    clinical = pd.DataFrame(
+        [
+            _clinical_row(patient_ID="1", farmacology_surgery="s"),
+            _clinical_row(patient_ID="2", farmacology_surgery="f"),
+            _clinical_row(patient_ID="3", farmacology_surgery="f", EMS="no"),
+        ]
+    )
+    patient = pd.DataFrame(
+        [
+            _patient_row(patient_ID="1"),
+            _patient_row(patient_ID="2"),
+            _patient_row(patient_ID="3"),
+        ]
+    )
+
+    result = compute_ems_treatment_duration(clinical, patient)
+    chart_ids = {chart.chart_id for chart in build_ems_treatment_duration_charts(result)}
+
+    assert "ems_surgery_rate_overall_bar" in chart_ids
+
+
+def test_surgery_rate_summary_table_includes_species_layers() -> None:
+    clinical_rows = []
+    patient_rows = []
+    for index in range(MIN_DISPLAY_GROUP_SIZE):
+        patient_id = f"dog-{index}"
+        clinical_rows.append(_clinical_row(patient_ID=patient_id, farmacology_surgery="s"))
+        patient_rows.append(_patient_row(patient_ID=patient_id, species="dog"))
+    for index in range(MIN_DISPLAY_GROUP_SIZE):
+        patient_id = f"cat-{index}"
+        clinical_rows.append(_clinical_row(patient_ID=patient_id, farmacology_surgery="f"))
+        patient_rows.append(
+            _patient_row(patient_ID=patient_id, species="cat", breed="persian")
+        )
+
+    result = compute_ems_treatment_duration(
+        pd.DataFrame(clinical_rows),
+        pd.DataFrame(patient_rows),
+    )
+    contexts = {
+        row[0] for row in surgery_rate_summary_table_block(result).rows
+    }
+
+    assert "Łącznie (psy i koty)" in contexts
+    assert "Psy" in contexts
+    assert "Koty" in contexts
+
+
+def test_surgery_rate_counts_one_case_after_continuation_chain() -> None:
+    clinical = pd.DataFrame(
+        [
+            {
+                "patient_ID": "1",
+                "eye": "l",
+                "type_of_ulcer": "e",
+                "date_appointment_first_before_micro": "1.09.2024",
+                "date_last_appointment": "10.09.2024",
+                "how_ended": "continuation",
+                "farmacology_surgery": "f",
+                "EMS": "no",
+            },
+            {
+                "patient_ID": "1",
+                "eye": "l",
+                "type_of_ulcer": "s",
+                "date_appointment_first_before_micro": "15.10.2024",
+                "date_last_appointment": "15.01.2025",
+                "how_ended": "good",
+                "farmacology_surgery": "s",
+                "EMS": "yes",
+            },
+        ]
+    )
+    patient = pd.DataFrame([_patient_row()])
+
+    result = compute_ems_treatment_duration(clinical, patient)
+
+    assert result.surgery_rate.exclusions.included_broader_cases == 1
+    assert result.surgery_rate.overall_summary is not None
+    assert result.surgery_rate.overall_summary.surgery_count == 1
+    assert result.exclusions.included_pharmacological_ems_cases == 0

@@ -22,6 +22,7 @@ from vetstats_app.analysis.ems_treatment_duration import (
     EmsTreatmentDurationResult,
     build_descriptive_stats_block,
     build_interpretation_summary,
+    build_surgery_rate_interpretation_summary,
     build_summary_details,
     cat_overall_comparison_table_block,
     cat_ulcer_comparison_table_block,
@@ -31,16 +32,16 @@ from vetstats_app.analysis.ems_treatment_duration import (
     exclusions_table_block,
     overall_comparison_table_block,
     statistical_tests_table_block,
+    surgery_rate_exclusions_table_block,
+    surgery_rate_summary_table_block,
+    surgery_rate_ulcer_table_block,
     ulcer_comparison_table_block,
 )
 from vetstats_app.services.analysis_report_service import AnalysisReportService
 from vetstats_app.services.ems_treatment_duration_service import EmsTreatmentDurationService
 from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
 from vetstats_app.ui.analysis.chart_widgets import build_chart_section
-from vetstats_app.ui.analysis.interpretation_panel import (
-    build_interpretation_section,
-    build_wrapped_text_label,
-)
+from vetstats_app.ui.analysis.interpretation_panel import build_wrapped_text_label
 from vetstats_app.ui.analysis.module_action_bar import build_module_action_bar
 from vetstats_app.ui.analysis.reference_table import (
     configure_reference_table,
@@ -110,6 +111,13 @@ def _sparse_group_note(layer_label: str) -> str:
     )
 
 
+def _interpretation_group(title: str, text: str) -> QGroupBox:
+    group = QGroupBox(title)
+    layout = QVBoxLayout(group)
+    layout.addWidget(build_wrapped_text_label(text))
+    return group
+
+
 class EmsTreatmentDurationView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -134,10 +142,11 @@ class EmsTreatmentDurationView(QWidget):
         summary_layout = QVBoxLayout(summary_group)
         summary_layout.addWidget(
             build_wrapped_text_label(
-                "Moduł analizuje czas leczenia uleczonych przypadków wrzodowych "
-                "leczonych farmakologicznie (farmacology_surgery = f) i porównuje "
-                "przypadki z EMS (tak) oraz bez EMS (nie). EMS odczytywany jest z "
-                "wiersza kończącego leczenie."
+                "Moduł zawiera dwa oddzielne bloki: (1) analiza czasu leczenia uleczonych "
+                "przypadków wrzodowych leczonych farmakologicznie (farmacology_surgery = f) "
+                "z porównaniem EMS tak/nie; (2) osobne podsumowanie częstości zabiegu w "
+                "szerszej kohorty zamkniętych przypadków wrzodowych. EMS i farmacology_surgery "
+                "odczytywane są z wiersza kończącego leczenie."
             )
         )
         summary_layout.addWidget(build_wrapped_text_label(build_summary_details(result)))
@@ -146,22 +155,46 @@ class EmsTreatmentDurationView(QWidget):
         stats_block = build_descriptive_stats_block(result)
         stats_group = QGroupBox(stats_block.title)
         stats_layout = QVBoxLayout(stats_group)
+        stats_layout.addWidget(
+            build_wrapped_text_label(
+                "Statystyki opisowe dotyczą wyłącznie bloku analizy czasu leczenia z EMS."
+            )
+        )
         stats_layout.addWidget(_table_from_block(stats_block))
         content_layout.addWidget(stats_group)
 
         exclusions_block = exclusions_table_block(result)
         exclusions_group = QGroupBox(exclusions_block.title)
         exclusions_layout = QVBoxLayout(exclusions_group)
+        exclusions_layout.addWidget(
+            build_wrapped_text_label(
+                "Wyklączenia dotyczą wyłącznie bloku analizy czasu leczenia z EMS."
+            )
+        )
         exclusions_layout.addWidget(_table_from_block(exclusions_block))
         content_layout.addWidget(exclusions_group)
 
+        ems_duration_group = QGroupBox(
+            "Analiza czasu leczenia — EMS (kohorta farmakologiczna, uleczone przypadki)"
+        )
+        ems_duration_layout = QVBoxLayout(ems_duration_group)
+        ems_duration_layout.addWidget(
+            build_wrapped_text_label(
+                "Poniższe tabele i testy dotyczą wyłącznie uleczonych przypadków "
+                "(how_ended = good) z farmacology_surgery = f i prawidłowym EMS."
+            )
+        )
+        ems_duration_content = QWidget()
+        ems_duration_content_layout = QVBoxLayout(ems_duration_content)
+        ems_duration_content_layout.setContentsMargins(0, 0, 0, 0)
+
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             overall_comparison_table_block(result),
             empty_note=_sparse_group_note("łącznie"),
         )
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             ulcer_comparison_table_block(result),
             note=(
                 f"Uwaga: w tabelach pokazywane są grupy EMS z co najmniej "
@@ -171,7 +204,7 @@ class EmsTreatmentDurationView(QWidget):
             empty_note=_sparse_group_note("według typu wrzodu — łącznie"),
         )
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             dog_overall_comparison_table_block(result),
             note=(
                 "Analiza gatunkowa obejmuje wyłącznie psy ze znaną klasyfikacją gatunku."
@@ -179,12 +212,12 @@ class EmsTreatmentDurationView(QWidget):
             empty_note=_sparse_group_note("psy — łącznie"),
         )
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             dog_ulcer_comparison_table_block(result),
             empty_note=_sparse_group_note("psy — według typu wrzodu"),
         )
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             cat_overall_comparison_table_block(result),
             note=(
                 "Analiza gatunkowa obejmuje wyłącznie koty ze znaną klasyfikacją gatunku."
@@ -192,12 +225,12 @@ class EmsTreatmentDurationView(QWidget):
             empty_note=_sparse_group_note("koty — łącznie"),
         )
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             cat_ulcer_comparison_table_block(result),
             empty_note=_sparse_group_note("koty — według typu wrzodu"),
         )
         _add_table_group(
-            content_layout,
+            ems_duration_content_layout,
             dog_breed_comparison_table_block(result),
             note=(
                 f"Warstwa rasowa (psy): rasa pojawia się w tabeli, gdy co najmniej jedna "
@@ -222,7 +255,46 @@ class EmsTreatmentDurationView(QWidget):
                 )
             )
             tests_layout.addWidget(_table_from_block(tests_block))
-            content_layout.addWidget(tests_group)
+            ems_duration_content_layout.addWidget(tests_group)
+
+        ems_duration_layout.addWidget(ems_duration_content)
+        content_layout.addWidget(ems_duration_group)
+
+        surgery_group = QGroupBox(
+            "Częstość konieczności zabiegu — szersza kohorta wrzodowa"
+        )
+        surgery_layout = QVBoxLayout(surgery_group)
+        surgery_layout.addWidget(
+            build_wrapped_text_label(
+                "Ten blok obejmuje wszystkie zamknięte przypadki rzeczywistych wrzodów "
+                "z farmacology_surgery = f (tylko farmakologia) lub s (farmakologia + zabieg) "
+                "na wierszu kończącym leczenie — bez wymogu uleczenia, czasu leczenia ani EMS. "
+                "To inna kohorta niż analiza czasu leczenia z EMS powyżej."
+            )
+        )
+        _add_table_group(
+            surgery_layout,
+            surgery_rate_exclusions_table_block(result),
+        )
+        _add_table_group(
+            surgery_layout,
+            surgery_rate_summary_table_block(result),
+            empty_note=(
+                "Brak przypadków w szerszej kohocie z prawidłowym farmacology_surgery (f lub s)."
+            ),
+        )
+        _add_table_group(
+            surgery_layout,
+            surgery_rate_ulcer_table_block(result),
+            note=(
+                f"Typ wrzodu jest pokazywany, gdy łączna liczba przypadków wynosi co najmniej "
+                f"{MIN_DISPLAY_GROUP_SIZE}."
+            ),
+            empty_note=(
+                f"Brak typów wrzodu z n≥{MIN_DISPLAY_GROUP_SIZE} w szerszej kohocie."
+            ),
+        )
+        content_layout.addWidget(surgery_group)
 
         chart_group = build_chart_section(
             "Wykresy",
@@ -231,8 +303,19 @@ class EmsTreatmentDurationView(QWidget):
         )
         content_layout.addWidget(chart_group)
         content_layout.addWidget(
-            build_interpretation_section(build_interpretation_summary(result))
+            _interpretation_group(
+                "Interpretacja — czas leczenia i EMS",
+                build_interpretation_summary(result),
+            )
         )
+        surgery_interpretation = build_surgery_rate_interpretation_summary(result)
+        if surgery_interpretation:
+            content_layout.addWidget(
+                _interpretation_group(
+                    "Interpretacja — częstość zabiegu (szersza kohorta)",
+                    surgery_interpretation,
+                )
+            )
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)

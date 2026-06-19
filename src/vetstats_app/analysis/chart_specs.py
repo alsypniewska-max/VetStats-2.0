@@ -43,7 +43,10 @@ from vetstats_app.analysis.breed_treatment_duration import BreedTreatmentDuratio
 from vetstats_app.analysis.ulcer_breed_treatment_duration import (
     UlcerBreedTreatmentDurationResult,
 )
-from vetstats_app.analysis.ems_treatment_duration import EmsTreatmentDurationResult
+from vetstats_app.analysis.ems_treatment_duration import (
+    EmsTreatmentDurationResult,
+    FARMACOLOGY_TREATMENT_LABELS,
+)
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -1181,6 +1184,74 @@ def build_ems_treatment_duration_charts(
                 x_axis_label="Rasa",
                 y_axis_label="Mediana (dni)",
                 legend_note="EMS tak / EMS nie",
+            )
+        )
+
+    surgery_block = result.surgery_rate
+    if surgery_block.overall_summary is not None:
+        overall = surgery_block.overall_summary
+        if overall.total_cases > 0:
+            charts.append(
+                AnalysisChartSpec(
+                    chart_id="ems_surgery_rate_overall_bar",
+                    title="Metoda leczenia — szersza kohorta wrzodowa (łącznie)",
+                    subtitle="Liczba zamkniętych przypadków wrzodowych",
+                    chart_type="bar",
+                    labels=(
+                        FARMACOLOGY_TREATMENT_LABELS["f"],
+                        FARMACOLOGY_TREATMENT_LABELS["s"],
+                    ),
+                    values=(
+                        float(overall.pharmacology_only_count),
+                        float(overall.surgery_count),
+                    ),
+                    x_axis_label="Metoda leczenia",
+                    y_axis_label="Liczba przypadków",
+                )
+            )
+
+    species_summaries = [
+        ("ems_surgery_rate_dog_bar", "psy", surgery_block.dog_summary),
+        ("ems_surgery_rate_cat_bar", "koty", surgery_block.cat_summary),
+    ]
+    for chart_id, species_label, summary in species_summaries:
+        if summary is None or summary.total_cases == 0:
+            continue
+        charts.append(
+            AnalysisChartSpec(
+                chart_id=chart_id,
+                title=f"Metoda leczenia — szersza kohorta wrzodowa ({species_label})",
+                subtitle="Liczba zamkniętych przypadków wrzodowych",
+                chart_type="bar",
+                labels=(
+                    FARMACOLOGY_TREATMENT_LABELS["f"],
+                    FARMACOLOGY_TREATMENT_LABELS["s"],
+                ),
+                values=(
+                    float(summary.pharmacology_only_count),
+                    float(summary.surgery_count),
+                ),
+                x_axis_label="Metoda leczenia",
+                y_axis_label="Liczba przypadków",
+            )
+        )
+
+    ulcer_surgery_rows = [
+        row
+        for row in surgery_block.ulcer_type_rows
+        if row.surgery_percent is not None
+    ]
+    if ulcer_surgery_rows:
+        charts.append(
+            AnalysisChartSpec(
+                chart_id="ems_surgery_rate_ulcer_bar",
+                title="Udział zabiegu według typu wrzodu — szersza kohorta",
+                subtitle="Procent przypadków z farmacology_surgery = s",
+                chart_type="bar",
+                labels=tuple(row.ulcer_label for row in ulcer_surgery_rows),
+                values=tuple(float(row.surgery_percent) for row in ulcer_surgery_rows),
+                x_axis_label="Typ wrzodu",
+                y_axis_label="Udział zabiegu (%)",
             )
         )
 

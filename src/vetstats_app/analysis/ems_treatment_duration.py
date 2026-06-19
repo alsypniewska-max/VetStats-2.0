@@ -19,6 +19,7 @@ from vetstats_app.analysis.diagnosis_frequency import DIAGNOSIS_LABELS
 from vetstats_app.analysis.report_models import ReportTableBlock
 from vetstats_app.analysis.treatment_cases import (
     TreatmentCaseExclusionSummary,
+    enumerate_treatment_cases,
     filter_healed_cases_with_duration,
 )
 from vetstats_app.analysis.treatment_groups import FARMACOLOGY_SURGERY_COLUMNS
@@ -35,6 +36,11 @@ EMS_LABELS = {
 SPECIES_LABELS = {
     "dog": "Psy",
     "cat": "Koty",
+}
+
+FARMACOLOGY_TREATMENT_LABELS = {
+    "f": "Tylko farmakologia",
+    "s": "Farmakologia + zabieg",
 }
 
 
@@ -118,6 +124,44 @@ class StatisticalTestRow:
 
 
 @dataclass(frozen=True)
+class UlcerSurgeryRateExclusions:
+    excluded_non_ulcer_rows: int
+    excluded_invalid_ulcer_cases: int
+    excluded_invalid_farmacology_cases: int
+    excluded_unknown_species_cases: int
+    included_broader_cases: int
+
+
+@dataclass(frozen=True)
+class SurgeryRateSummaryRow:
+    context_label: str
+    total_cases: int
+    pharmacology_only_count: int
+    surgery_count: int
+    pharmacology_only_percent: float | None
+    surgery_percent: float | None
+
+
+@dataclass(frozen=True)
+class UlcerSurgeryRateRow:
+    ulcer_code: str
+    ulcer_label: str
+    total_cases: int
+    pharmacology_only_count: int
+    surgery_count: int
+    surgery_percent: float | None
+
+
+@dataclass(frozen=True)
+class UlcerSurgeryRateBlock:
+    exclusions: UlcerSurgeryRateExclusions
+    overall_summary: SurgeryRateSummaryRow | None
+    dog_summary: SurgeryRateSummaryRow | None
+    cat_summary: SurgeryRateSummaryRow | None
+    ulcer_type_rows: tuple[UlcerSurgeryRateRow, ...]
+
+
+@dataclass(frozen=True)
 class EmsTreatmentDurationResult:
     source_clinical_label: str
     source_patient_label: str
@@ -137,6 +181,7 @@ class EmsTreatmentDurationResult:
     dog_ulcer_grouped_bars: tuple[EmsUlcerGroupedBarRow, ...]
     cat_ulcer_grouped_bars: tuple[EmsUlcerGroupedBarRow, ...]
     dog_breed_ems_value_groups: tuple[EmsDurationValueGroup, ...]
+    surgery_rate: UlcerSurgeryRateBlock
     error_message: str | None = None
 
     @property
@@ -152,6 +197,14 @@ class _EmsCase:
     ulcer_label: str
     species: str | None
     breed: str | None
+
+
+@dataclass(frozen=True)
+class _BroaderUlcerCase:
+    farmacology: str
+    ulcer_code: str
+    ulcer_label: str
+    species: str | None
 
 
 def _ulcer_label(ulcer_code: str) -> str:
@@ -452,6 +505,162 @@ def _ulcer_grouped_bars(
     return tuple(rows)
 
 
+def _format_percent(value: float | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:.1f}%"
+
+
+def _empty_surgery_rate_block() -> UlcerSurgeryRateBlock:
+    return UlcerSurgeryRateBlock(
+        exclusions=UlcerSurgeryRateExclusions(
+            excluded_non_ulcer_rows=0,
+            excluded_invalid_ulcer_cases=0,
+            excluded_invalid_farmacology_cases=0,
+            excluded_unknown_species_cases=0,
+            included_broader_cases=0,
+        ),
+        overall_summary=None,
+        dog_summary=None,
+        cat_summary=None,
+        ulcer_type_rows=(),
+    )
+
+
+def _surgery_rate_summary(
+    cases: tuple[_BroaderUlcerCase, ...],
+    *,
+    context_label: str,
+    species: str | None = None,
+) -> SurgeryRateSummaryRow | None:
+    filtered = tuple(
+        case
+        for case in cases
+        if species is None or case.species == species
+    )
+    if not filtered:
+        return None
+    pharmacology_only_count = sum(
+        1 for case in filtered if case.farmacology == "f"
+    )
+    surgery_count = sum(1 for case in filtered if case.farmacology == "s")
+    total_cases = len(filtered)
+    return SurgeryRateSummaryRow(
+        context_label=context_label,
+        total_cases=total_cases,
+        pharmacology_only_count=pharmacology_only_count,
+        surgery_count=surgery_count,
+        pharmacology_only_percent=(
+            pharmacology_only_count / total_cases * 100.0 if total_cases else None
+        ),
+        surgery_percent=(
+            surgery_count / total_cases * 100.0 if total_cases else None
+        ),
+    )
+
+
+def _ulcer_surgery_rate_rows(
+    cases: tuple[_BroaderUlcerCase, ...],
+) -> tuple[UlcerSurgeryRateRow, ...]:
+    ulcer_codes = sorted({case.ulcer_code for case in cases})
+    rows: list[UlcerSurgeryRateRow] = []
+    for ulcer_code in ulcer_codes:
+        subset = tuple(case for case in cases if case.ulcer_code == ulcer_code)
+        if len(subset) < MIN_DISPLAY_GROUP_SIZE:
+            continue
+        pharmacology_only_count = sum(
+            1 for case in subset if case.farmacology == "f"
+        )
+        surgery_count = sum(1 for case in subset if case.farmacology == "s")
+        total_cases = len(subset)
+        rows.append(
+            UlcerSurgeryRateRow(
+                ulcer_code=ulcer_code,
+                ulcer_label=_ulcer_label(ulcer_code),
+                total_cases=total_cases,
+                pharmacology_only_count=pharmacology_only_count,
+                surgery_count=surgery_count,
+                surgery_percent=(
+                    surgery_count / total_cases * 100.0 if total_cases else None
+                ),
+            )
+        )
+    rows.sort(key=lambda row: (-row.total_cases, row.ulcer_label))
+    return tuple(rows)
+
+
+def _build_surgery_rate_block(
+    clinical: pd.DataFrame,
+    patient_lookup: dict[str, tuple[object, object]],
+    farmacology_col: str,
+) -> UlcerSurgeryRateBlock:
+    ulcer_col = resolve_column(clinical, "type_of_ulcer")
+    if ulcer_col is None:
+        return _empty_surgery_rate_block()
+
+    ulcer_mask = clinical[ulcer_col].map(normalize_ulcer_code).notna()
+    excluded_non_ulcer_rows = int((~ulcer_mask).sum())
+    ulcer_frame = clinical.loc[ulcer_mask]
+    cases = enumerate_treatment_cases(ulcer_frame)
+
+    excluded_invalid_ulcer = 0
+    excluded_invalid_farmacology = 0
+    excluded_unknown_species = 0
+    broader_cases: list[_BroaderUlcerCase] = []
+
+    for case in cases:
+        ulcer_code = normalize_ulcer_code(case.terminal_ulcer_code)
+        if ulcer_code is None:
+            excluded_invalid_ulcer += 1
+            continue
+
+        terminal_row = clinical.loc[case.terminal_row_index]
+        farmacology = normalize_farmacology_surgery(terminal_row[farmacology_col])
+        if farmacology not in ("f", "s"):
+            excluded_invalid_farmacology += 1
+            continue
+
+        species_value, _ = patient_lookup.get(case.patient_id, (None, None))
+        species = classify_species(species_value)
+        if species is None:
+            excluded_unknown_species += 1
+
+        broader_cases.append(
+            _BroaderUlcerCase(
+                farmacology=farmacology,
+                ulcer_code=ulcer_code,
+                ulcer_label=_ulcer_label(ulcer_code),
+                species=species,
+            )
+        )
+
+    cases_tuple = tuple(broader_cases)
+    return UlcerSurgeryRateBlock(
+        exclusions=UlcerSurgeryRateExclusions(
+            excluded_non_ulcer_rows=excluded_non_ulcer_rows,
+            excluded_invalid_ulcer_cases=excluded_invalid_ulcer,
+            excluded_invalid_farmacology_cases=excluded_invalid_farmacology,
+            excluded_unknown_species_cases=excluded_unknown_species,
+            included_broader_cases=len(cases_tuple),
+        ),
+        overall_summary=_surgery_rate_summary(
+            cases_tuple,
+            context_label="Łącznie (psy i koty)",
+        ),
+        dog_summary=_surgery_rate_summary(
+            cases_tuple,
+            context_label="Psy",
+            species="dog",
+        ),
+        cat_summary=_surgery_rate_summary(
+            cases_tuple,
+            context_label="Koty",
+            species="cat",
+        ),
+        ulcer_type_rows=_ulcer_surgery_rate_rows(cases_tuple),
+    )
+
+
 def _resolve_terminal_columns(clinical: pd.DataFrame) -> dict[str, str | None]:
     farmacology_col = None
     for candidate in FARMACOLOGY_SURGERY_COLUMNS:
@@ -546,6 +755,7 @@ def compute_ems_treatment_duration(
             dog_ulcer_grouped_bars=(),
             cat_ulcer_grouped_bars=(),
             dog_breed_ems_value_groups=(),
+            surgery_rate=_empty_surgery_rate_block(),
             error_message="Brak kolumny patient_ID w tabeli patient.",
         )
 
@@ -595,6 +805,7 @@ def compute_ems_treatment_duration(
             dog_ulcer_grouped_bars=(),
             cat_ulcer_grouped_bars=(),
             dog_breed_ems_value_groups=(),
+            surgery_rate=_empty_surgery_rate_block(),
             error_message=f"Brak kolumn w tabeli clinical: {', '.join(missing)}.",
         )
 
@@ -821,6 +1032,7 @@ def compute_ems_treatment_duration(
         dog_ulcer_grouped_bars=_ulcer_grouped_bars(dog_ulcer_comparisons),
         cat_ulcer_grouped_bars=_ulcer_grouped_bars(cat_ulcer_comparisons),
         dog_breed_ems_value_groups=tuple(dog_breed_value_groups),
+        surgery_rate=_build_surgery_rate_block(clinical, lookup, farmacology_col),
     )
 
 
@@ -941,13 +1153,20 @@ def build_summary_details(result: EmsTreatmentDurationResult) -> str:
         return result.error_message or "Nie udało się przeanalizować czasu leczenia."
 
     exclusions = result.exclusions
+    surgery = result.surgery_rate
+    surgery_total = (
+        surgery.overall_summary.total_cases
+        if surgery.overall_summary is not None
+        else surgery.exclusions.included_broader_cases
+    )
     return (
         f"Źródła danych: {result.source_clinical_label}, {result.source_patient_label}. "
-        f"Analiza obejmuje wyłącznie uleczone przypadki wrzodowe leczone "
-        f"farmakologicznie (farmacology_surgery = f) z prawidłowym EMS "
-        f"(tak/nie) na wierszu kończącym leczenie. "
-        f"Uwzględniono {exclusions.included_pharmacological_ems_cases} przypadków "
-        f"({exclusions.included_ems_yes} z EMS, {exclusions.included_ems_no} bez EMS)."
+        f"Blok EMS: wyłącznie uleczone przypadki wrzodowe leczone farmakologicznie "
+        f"(farmacology_surgery = f) z prawidłowym EMS (tak/nie) na wierszu kończącym "
+        f"leczenie — uwzględniono {exclusions.included_pharmacological_ems_cases} przypadków "
+        f"({exclusions.included_ems_yes} z EMS, {exclusions.included_ems_no} bez EMS). "
+        f"Blok zabiegu: szersza kohorta zamkniętych przypadków wrzodowych z "
+        f"farmacology_surgery = f lub s — uwzględniono {surgery_total} przypadków."
     )
 
 
@@ -1223,3 +1442,176 @@ def statistical_tests_table_block(
             for row in result.statistical_tests
         ),
     )
+
+
+_SURGERY_SUMMARY_COLUMNS = (
+    "Kontekst",
+    "Liczba przypadków",
+    "Tylko farmakologia (n)",
+    "Tylko farmakologia (%)",
+    "Farmakologia + zabieg (n)",
+    "Farmakologia + zabieg (%)",
+)
+
+_SURGERY_ULCER_COLUMNS = (
+    "Typ wrzodu",
+    "Liczba przypadków",
+    "Tylko farmakologia (n)",
+    "Farmakologia + zabieg (n)",
+    "Udział zabiegu (%)",
+)
+
+
+def _surgery_summary_table_rows(
+    summaries: tuple[SurgeryRateSummaryRow, ...],
+) -> tuple[tuple[str, ...], ...]:
+    rows: list[tuple[str, ...]] = []
+    for summary in summaries:
+        rows.append(
+            (
+                summary.context_label,
+                str(summary.total_cases),
+                str(summary.pharmacology_only_count),
+                _format_percent(summary.pharmacology_only_percent),
+                str(summary.surgery_count),
+                _format_percent(summary.surgery_percent),
+            )
+        )
+    return tuple(rows)
+
+
+def surgery_rate_exclusions_table_block(
+    result: EmsTreatmentDurationResult,
+) -> ReportTableBlock:
+    exclusions = result.surgery_rate.exclusions
+    return ReportTableBlock(
+        title="Wykluczenia — częstość zabiegu (szersza kohorta)",
+        columns=("Kategoria", "Liczba"),
+        rows=(
+            ("Wiersze clinical — nie wrzód", str(exclusions.excluded_non_ulcer_rows)),
+            (
+                "Przypadki — nieprawidłowy typ wrzodu",
+                str(exclusions.excluded_invalid_ulcer_cases),
+            ),
+            (
+                "Przypadki — nieprawidłowe farmacology_surgery",
+                str(exclusions.excluded_invalid_farmacology_cases),
+            ),
+            (
+                "Przypadki — nieznany gatunek (pominięte w warstwie gatunkowej)",
+                str(exclusions.excluded_unknown_species_cases),
+            ),
+            (
+                "Uwzględnione — zamknięte przypadki wrzodowe (f lub s)",
+                str(exclusions.included_broader_cases),
+            ),
+        ),
+    )
+
+
+def surgery_rate_summary_table_block(
+    result: EmsTreatmentDurationResult,
+) -> ReportTableBlock:
+    summaries = tuple(
+        summary
+        for summary in (
+            result.surgery_rate.overall_summary,
+            result.surgery_rate.dog_summary,
+            result.surgery_rate.cat_summary,
+        )
+        if summary is not None
+    )
+    return ReportTableBlock(
+        title="Częstość konieczności zabiegu — podsumowanie (szersza kohorta wrzodowa)",
+        columns=_SURGERY_SUMMARY_COLUMNS,
+        rows=_surgery_summary_table_rows(summaries),
+    )
+
+
+def surgery_rate_ulcer_table_block(
+    result: EmsTreatmentDurationResult,
+) -> ReportTableBlock:
+    return ReportTableBlock(
+        title=(
+            f"Częstość konieczności zabiegu według typu wrzodu "
+            f"(szersza kohorta; typy n≥{MIN_DISPLAY_GROUP_SIZE})"
+        ),
+        columns=_SURGERY_ULCER_COLUMNS,
+        rows=tuple(
+            (
+                row.ulcer_label,
+                str(row.total_cases),
+                str(row.pharmacology_only_count),
+                str(row.surgery_count),
+                _format_percent(row.surgery_percent),
+            )
+            for row in result.surgery_rate.ulcer_type_rows
+        ),
+    )
+
+
+def build_surgery_rate_interpretation_summary(
+    result: EmsTreatmentDurationResult,
+) -> str:
+    if not result.is_success:
+        return ""
+
+    block = result.surgery_rate
+    overall = block.overall_summary
+    if overall is None or overall.total_cases == 0:
+        return (
+            "W szerszej kohocie zamkniętych przypadków wrzodowych nie znaleziono "
+            "przypadków z prawidłowym farmacology_surgery (f lub s) na wierszu "
+            "kończącym leczenie."
+        )
+
+    parts = [
+        (
+            "Ten blok dotyczy szerszej kohorty zamkniętych przypadków wrzodowych "
+            "(wszystkie zakończenia leczenia z prawidłowym farmacology_surgery = f lub s). "
+            "Nie jest to ta sama kohorta co analiza czasu leczenia z EMS powyżej, która "
+            "ogranicza się do uleczonych przypadków leczonych wyłącznie farmakologicznie."
+        ),
+        (
+            f"W {overall.total_cases} przypadkach łącznie zabieg był stosowany w "
+            f"{overall.surgery_count} ({_format_percent(overall.surgery_percent)}), "
+            f"a wyłącznie farmakologia w {overall.pharmacology_only_count} "
+            f"({_format_percent(overall.pharmacology_only_percent)})."
+        ),
+    ]
+
+    if block.dog_summary is not None:
+        dog = block.dog_summary
+        parts.append(
+            f"Psy (n={dog.total_cases}): zabieg w {dog.surgery_count} "
+            f"({_format_percent(dog.surgery_percent)}), tylko farmakologia w "
+            f"{dog.pharmacology_only_count} ({_format_percent(dog.pharmacology_only_percent)})."
+        )
+    if block.cat_summary is not None:
+        cat = block.cat_summary
+        parts.append(
+            f"Koty (n={cat.total_cases}): zabieg w {cat.surgery_count} "
+            f"({_format_percent(cat.surgery_percent)}), tylko farmakologia w "
+            f"{cat.pharmacology_only_count} ({_format_percent(cat.pharmacology_only_percent)})."
+        )
+
+    if block.ulcer_type_rows:
+        highest = max(block.ulcer_type_rows, key=lambda row: row.surgery_percent or 0.0)
+        parts.append(
+            f"Najwyższy udział zabiegu wśród typów wrzodu z n≥{MIN_DISPLAY_GROUP_SIZE}: "
+            f"{highest.ulcer_label} ({_format_percent(highest.surgery_percent)})."
+        )
+    elif block.exclusions.included_broader_cases > 0:
+        parts.append(
+            f"Brak typów wrzodu z co najmniej {MIN_DISPLAY_GROUP_SIZE} przypadkami — "
+            "podział według typu wrzodu nie został pokazany."
+        )
+
+    if block.exclusions.excluded_unknown_species_cases > 0:
+        parts.append(
+            f"{block.exclusions.excluded_unknown_species_cases} przypadków ma nieznany "
+            "gatunek i jest pominiętych w warstwie gatunkowej, ale wliczonych do "
+            "podsumowania łącznego."
+        )
+
+    return " ".join(parts)
