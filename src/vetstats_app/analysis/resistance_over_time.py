@@ -18,7 +18,6 @@ from data_sterilizer.schemas.micro import (
 )
 
 UNKNOWN_VALUE = "xxx"
-ANALYSIS_YEARS: tuple[int, ...] = (2024, 2025, 2026)
 
 SENSITIVITY_CATEGORY_MAPPING: list[tuple[str, str]] = [
     ("+++", "wysoka wrażliwość (+++)"),
@@ -104,10 +103,22 @@ def _extract_year(value: object) -> int | None:
     parsed = parse_micro_date(str(value).strip())
     if parsed is None:
         return None
-    year = parsed.year
-    if year not in ANALYSIS_YEARS:
-        return None
-    return year
+    return parsed.year
+
+
+def _observed_years_from_included(included: pd.DataFrame) -> tuple[int, ...]:
+    if included.empty or "_year" not in included.columns:
+        return ()
+    years = included["_year"].dropna().unique()
+    return tuple(sorted(int(year) for year in years))
+
+
+def _format_year_span(years: tuple[int, ...]) -> str:
+    if not years:
+        return "brak lat z danymi"
+    if len(years) == 1:
+        return str(years[0])
+    return f"{years[0]}–{years[-1]}"
 
 
 def _normalize_sensitivity(value: object) -> str | None:
@@ -204,7 +215,7 @@ def compute_resistance_over_time(
     normalized_bacteria = micro[bacteria_col].map(_normalize_bacteria)
 
     # Excluded from resistance analysis: negative microbiology results,
-    # missing/invalid bacteria values, and rows outside 2024-2026 date_collect.
+    # missing/invalid bacteria values, and rows with unparseable date_collect.
     negative_mask = normalized_bacteria == NEGATIVE_BACTERIA_VALUE
     invalid_bacteria_mask = normalized_bacteria.isna() & ~negative_mask
     valid_bacteria_mask = normalized_bacteria.notna() & ~negative_mask
@@ -230,7 +241,7 @@ def compute_resistance_over_time(
     )
 
     yearly_summaries: list[YearlyResistanceSummary] = []
-    for year in ANALYSIS_YEARS:
+    for year in _observed_years_from_included(included):
         year_rows = included[included["_year"] == year]
         included_observations = len(year_rows)
 
@@ -269,10 +280,16 @@ def build_summary_details(result: ResistanceOverTimeResult) -> str:
         return result.error_message or "Nie udało się wczytać danych micro."
 
     exclusions = result.exclusions
+    observed_years = tuple(
+        summary.year
+        for summary in result.yearly_summaries
+        if summary.included_observations > 0
+    )
+    year_span = _format_year_span(observed_years)
     return (
         f"Źródło danych: {result.source_label}. "
         f"Uwzględniono {exclusions.included_total} z {exclusions.total_micro_rows} "
-        f"wierszy micro w analizie rocznej 2024–2026."
+        f"wierszy micro w analizie rocznej ({year_span})."
     )
 
 
@@ -285,8 +302,8 @@ def build_inclusion_details(result: ResistanceOverTimeResult) -> str:
         f"Wykluczono {exclusions.excluded_negative} wierszy z bacteria = negative, "
         f"{exclusions.excluded_invalid_bacteria} wierszy z brakującymi lub "
         f"nieprawidłowymi wartościami bacteria oraz "
-        f"{exclusions.excluded_invalid_year} wierszy z brakującą datą date_collect "
-        f"lub rokiem spoza 2024–2026."
+        f"{exclusions.excluded_invalid_year} wierszy z brakującą lub "
+        f"nieprawidłową datą date_collect."
     )
 
 
