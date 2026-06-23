@@ -31,8 +31,19 @@ from vetstats_app.analysis.report_models import (
     ReportTableBlock,
 )
 from vetstats_app.services.analysis_chart_renderer import chart_spec_to_png_bytes
+from vetstats_app.services.branding import (
+    APP_REPORT_TITLE,
+    footer_text,
+    microbiology_logo_path,
+    vetstats_logo_path,
+)
 
-_PAGE_MARGIN = 18 * mm
+_HORIZONTAL_MARGIN = 18 * mm
+_TOP_MARGIN = 30 * mm
+_BOTTOM_MARGIN = 16 * mm
+_LOGO_MAX_HEIGHT = 13 * mm
+_HEADER_TITLE_FONT_SIZE = 11
+_FOOTER_FONT_SIZE = 8.5
 _PORTRAIT_PAGE_SIZE = A4
 _LANDSCAPE_PAGE_SIZE = landscape(A4)
 
@@ -46,7 +57,7 @@ def write_section_report_pdf(report: AnalysisSectionReport, destination: Path) -
 
     font_name = _register_unicode_font()
     styles = _build_report_styles(font_name)
-    doc = _create_document(destination, report.section_title)
+    doc = _create_document(destination, report.section_title, font_name)
     story = _build_section_story(report, styles, font_name)
     doc.build(story)
 
@@ -63,7 +74,7 @@ def write_combined_analysis_report_pdf(
 
     font_name = _register_unicode_font()
     styles = _build_report_styles(font_name)
-    doc = _create_document(destination, report.report_title)
+    doc = _create_document(destination, report.report_title, font_name)
 
     story: list = [
         Paragraph(escape(report.report_title), styles["cover_title"]),
@@ -141,28 +152,29 @@ def write_combined_analysis_report_pdf(
     doc.build(story)
 
 
-def _create_document(destination: Path, title: str) -> BaseDocTemplate:
+def _create_document(destination: Path, title: str, font_name: str) -> BaseDocTemplate:
+    draw_page_branding = _make_draw_page_branding(font_name)
     doc = BaseDocTemplate(
         str(destination),
         pagesize=_PORTRAIT_PAGE_SIZE,
-        leftMargin=_PAGE_MARGIN,
-        rightMargin=_PAGE_MARGIN,
-        topMargin=_PAGE_MARGIN,
-        bottomMargin=_PAGE_MARGIN,
+        leftMargin=_HORIZONTAL_MARGIN,
+        rightMargin=_HORIZONTAL_MARGIN,
+        topMargin=_TOP_MARGIN,
+        bottomMargin=_BOTTOM_MARGIN,
         title=title,
     )
     portrait_frame = Frame(
-        _PAGE_MARGIN,
-        _PAGE_MARGIN,
-        _PORTRAIT_PAGE_SIZE[0] - (2 * _PAGE_MARGIN),
-        _PORTRAIT_PAGE_SIZE[1] - (2 * _PAGE_MARGIN),
+        _HORIZONTAL_MARGIN,
+        _BOTTOM_MARGIN,
+        _PORTRAIT_PAGE_SIZE[0] - (2 * _HORIZONTAL_MARGIN),
+        _PORTRAIT_PAGE_SIZE[1] - _TOP_MARGIN - _BOTTOM_MARGIN,
         id="portrait_frame",
     )
     landscape_frame = Frame(
-        _PAGE_MARGIN,
-        _PAGE_MARGIN,
-        _LANDSCAPE_PAGE_SIZE[0] - (2 * _PAGE_MARGIN),
-        _LANDSCAPE_PAGE_SIZE[1] - (2 * _PAGE_MARGIN),
+        _HORIZONTAL_MARGIN,
+        _BOTTOM_MARGIN,
+        _LANDSCAPE_PAGE_SIZE[0] - (2 * _HORIZONTAL_MARGIN),
+        _LANDSCAPE_PAGE_SIZE[1] - _TOP_MARGIN - _BOTTOM_MARGIN,
         id="landscape_frame",
     )
     doc.addPageTemplates(
@@ -171,15 +183,112 @@ def _create_document(destination: Path, title: str) -> BaseDocTemplate:
                 id="portrait",
                 frames=[portrait_frame],
                 pagesize=_PORTRAIT_PAGE_SIZE,
+                onPage=draw_page_branding,
             ),
             PageTemplate(
                 id="landscape",
                 frames=[landscape_frame],
                 pagesize=_LANDSCAPE_PAGE_SIZE,
+                onPage=draw_page_branding,
             ),
         ]
     )
     return doc
+
+
+def _make_draw_page_branding(font_name: str):
+    left_logo = _load_logo_reader(vetstats_logo_path())
+    right_logo = _load_logo_reader(microbiology_logo_path())
+    footer = footer_text()
+
+    def _draw_page_branding(canvas, doc) -> None:
+        page_width, page_height = canvas._pagesize
+        canvas.saveState()
+
+        header_bottom = page_height - _TOP_MARGIN
+        logo_y = header_bottom + (_TOP_MARGIN - _LOGO_MAX_HEIGHT) / 2
+        title_y = logo_y + (_LOGO_MAX_HEIGHT / 2) - (_HEADER_TITLE_FONT_SIZE / 3)
+
+        _draw_logo(
+            canvas,
+            left_logo,
+            x=_HORIZONTAL_MARGIN,
+            y=logo_y,
+            max_height=_LOGO_MAX_HEIGHT,
+            anchor="left",
+        )
+        _draw_logo(
+            canvas,
+            right_logo,
+            x=page_width - _HORIZONTAL_MARGIN,
+            y=logo_y,
+            max_height=_LOGO_MAX_HEIGHT,
+            anchor="right",
+        )
+
+        canvas.setFont(font_name, _HEADER_TITLE_FONT_SIZE)
+        canvas.setFillColor(colors.HexColor("#1F2937"))
+        canvas.drawCentredString(page_width / 2, title_y, APP_REPORT_TITLE)
+
+        canvas.setStrokeColor(colors.HexColor("#D1D5DB"))
+        canvas.setLineWidth(0.5)
+        canvas.line(
+            _HORIZONTAL_MARGIN,
+            header_bottom,
+            page_width - _HORIZONTAL_MARGIN,
+            header_bottom,
+        )
+
+        footer_y = _BOTTOM_MARGIN / 2 - (_FOOTER_FONT_SIZE / 3)
+        canvas.setFont(font_name, _FOOTER_FONT_SIZE)
+        canvas.setFillColor(colors.HexColor("#6B7280"))
+        canvas.drawCentredString(page_width / 2, footer_y, footer)
+
+        canvas.restoreState()
+
+    return _draw_page_branding
+
+
+def _load_logo_reader(path: Path):
+    if not path.is_file():
+        return None
+    try:
+        from reportlab.lib.utils import ImageReader
+
+        return ImageReader(str(path))
+    except Exception:
+        return None
+
+
+def _draw_logo(
+    canvas,
+    image_reader,
+    *,
+    x: float,
+    y: float,
+    max_height: float,
+    anchor: str,
+) -> None:
+    if image_reader is None:
+        return
+    try:
+        image_width, image_height = image_reader.getSize()
+        if image_width <= 0 or image_height <= 0:
+            return
+        draw_height = max_height
+        draw_width = draw_height * (image_width / image_height)
+        draw_x = x if anchor == "left" else x - draw_width
+        canvas.drawImage(
+            image_reader,
+            draw_x,
+            y,
+            width=draw_width,
+            height=draw_height,
+            mask="auto",
+            preserveAspectRatio=True,
+        )
+    except Exception:
+        return
 
 
 def _build_report_styles(font_name: str) -> dict[str, ParagraphStyle]:
@@ -297,8 +406,10 @@ def _build_chart_image(chart: AnalysisChartSpec) -> Image:
         dpi=120,
     )
     image = Image(io.BytesIO(png_bytes))
-    max_width = _LANDSCAPE_PAGE_SIZE[0] - (2 * _PAGE_MARGIN)
-    max_height = _LANDSCAPE_PAGE_SIZE[1] - (2 * _PAGE_MARGIN) - (20 * mm)
+    max_width = _LANDSCAPE_PAGE_SIZE[0] - (2 * _HORIZONTAL_MARGIN)
+    max_height = (
+        _LANDSCAPE_PAGE_SIZE[1] - _TOP_MARGIN - _BOTTOM_MARGIN - (20 * mm)
+    )
     aspect = image.imageHeight / image.imageWidth if image.imageWidth else 1.0
     image.drawWidth = max_width
     image.drawHeight = max_width * aspect
@@ -357,7 +468,7 @@ def _build_table_block_story(
     for row in raw_rows:
         table_data.append([_cell(value, body_cell_style) for value in row])
 
-    available_width = _PORTRAIT_PAGE_SIZE[0] - (2 * _PAGE_MARGIN)
+    available_width = _PORTRAIT_PAGE_SIZE[0] - (2 * _HORIZONTAL_MARGIN)
     column_widths = _proportional_column_widths(
         block.columns, raw_rows, available_width
     )

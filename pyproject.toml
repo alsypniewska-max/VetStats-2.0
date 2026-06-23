@@ -21,6 +21,9 @@ dev = [
     "pytest>=7.0",
 ]
 
+[project.scripts]
+vetstats-gui = "vetstats_app.app:run"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
