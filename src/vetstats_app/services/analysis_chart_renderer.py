@@ -21,6 +21,7 @@ from vetstats_app.analysis.chart_models import AnalysisChartSpec
 UI_CHART_WIDTH_INCHES = 6.0
 UI_CHART_HEIGHT_INCHES = 3.6
 UI_CHART_DPI = 100
+CHART_TITLE_FONT_SIZE = 10
 
 
 def create_chart_widget(
@@ -237,12 +238,10 @@ def _chart_width_inches(layout_mode: Literal["ui", "export"]) -> float:
     return UI_CHART_WIDTH_INCHES if layout_mode == "ui" else 7.0
 
 
-def _title_fontproperties(layout_mode: Literal["ui", "export"]):
+def _title_fontproperties(_layout_mode: Literal["ui", "export"]):
     from matplotlib.font_manager import FontProperties
 
-    if layout_mode == "ui":
-        return FontProperties(size=10)
-    return FontProperties(size=plt.rcParams.get("axes.titlesize", 10))
+    return FontProperties(size=CHART_TITLE_FONT_SIZE)
 
 
 def _text_width_points(text: str, *, layout_mode: Literal["ui", "export"]) -> float:
@@ -592,14 +591,11 @@ def _draw_chart(
     else:
         _draw_vertical_bar_chart(axis, spec, layout_mode=layout_mode)
 
-    if layout_mode == "ui":
-        axis.set_title(
-            _chart_title(spec, layout_mode=layout_mode),
-            fontsize=10,
-            pad=6,
-        )
-    else:
-        axis.set_title(_chart_title(spec, layout_mode=layout_mode), pad=8)
+    axis.set_title(
+        _chart_title(spec, layout_mode=layout_mode),
+        fontsize=CHART_TITLE_FONT_SIZE,
+        pad=6 if layout_mode == "ui" else 8,
+    )
     if spec.orientation == "horizontal":
         if spec.y_axis_label:
             axis.set_xlabel(spec.y_axis_label)
