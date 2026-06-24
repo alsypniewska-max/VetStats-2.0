@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from vetstats_app.analysis.chart_specs import (
@@ -187,6 +188,20 @@ from vetstats_app.services.treatment_diagnosis_relationship_service import (
     TreatmentDiagnosisRelationshipService,
 )
 from vetstats_app.services.treatment_groups_service import TreatmentGroupsService
+from vetstats_app.services.duration_of_problem_stats_service import (
+    DurationOfProblemStatsService,
+)
+from vetstats_app.services.micro_monthly_distribution_service import (
+    MicroMonthlyDistributionService,
+)
+from vetstats_app.services.pre_swab_drugs_service import PreSwabDrugsService
+from vetstats_app.services.breed_treatment_duration_service import (
+    BreedTreatmentDurationService,
+)
+from vetstats_app.services.ulcer_breed_treatment_duration_service import (
+    UlcerBreedTreatmentDurationService,
+)
+from vetstats_app.services.ems_treatment_duration_service import EmsTreatmentDurationService
 
 
 class AnalysisReportService:
@@ -972,52 +987,161 @@ class AnalysisReportService:
 
     def prepare_combined_automatic_analysis_report(
         self,
-    ) -> CombinedAnalysisReport:
-        population_result = PopulationCharacteristicsService().analyze()
-        diagnosis_result = DiagnosisFrequencyService().analyze()
-        treatment_result = TreatmentGroupsService().analyze()
-        patient_id_result = PatientIdCrossTableSummaryService().analyze()
-        microbiology_result = MicrobiologyResultsService().analyze()
-        diagnosis_culture_result = DiagnosisCultureRelationshipService().analyze()
-        procedure_diagnosis_result = ProcedureDiagnosisRelationshipService().analyze()
-        treatment_diagnosis_result = TreatmentDiagnosisRelationshipService().analyze()
-
-        sections = (
-            self.prepare_population_characteristics_report(population_result),
-            self.prepare_diagnosis_frequency_report(diagnosis_result),
-            self.prepare_treatment_groups_report(treatment_result),
-            self.prepare_patient_id_cross_table_report(patient_id_result),
-            self.prepare_microbiology_results_report(microbiology_result),
-            self.prepare_diagnosis_culture_relationship_report(diagnosis_culture_result),
-            self.prepare_procedure_diagnosis_relationship_report(procedure_diagnosis_result),
-            self.prepare_treatment_diagnosis_relationship_report(treatment_diagnosis_result),
+        *,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+    ) -> tuple[CombinedAnalysisReport, tuple[tuple[str, str], ...]]:
+        section_specs: tuple[tuple[str, Callable[[], AnalysisSectionReport]], ...] = (
+            (
+                "Charakterystyka populacji pacjentów",
+                lambda: self.prepare_population_characteristics_report(
+                    PopulationCharacteristicsService().analyze()
+                ),
+            ),
+            (
+                "Analiza częstości rozpoznań",
+                lambda: self.prepare_diagnosis_frequency_report(
+                    DiagnosisFrequencyService().analyze()
+                ),
+            ),
+            (
+                "Analiza leczenia w grupach pacjentów",
+                lambda: self.prepare_treatment_groups_report(
+                    TreatmentGroupsService().analyze()
+                ),
+            ),
+            (
+                "Analiza wyników mikrobiologicznych",
+                lambda: self.prepare_microbiology_results_report(
+                    MicrobiologyResultsService().analyze()
+                ),
+            ),
+            (
+                "Analiza oporności bakterii w czasie",
+                lambda: self.prepare_resistance_over_time_report(
+                    ResistanceOverTimeService().analyze()
+                ),
+            ),
+            (
+                "Powiązanie rozpoznań z posiewem",
+                lambda: self.prepare_diagnosis_culture_relationship_report(
+                    DiagnosisCultureRelationshipService().analyze()
+                ),
+            ),
+            (
+                "Analiza zależności między zabiegiem a rozpoznaniem",
+                lambda: self.prepare_procedure_diagnosis_relationship_report(
+                    ProcedureDiagnosisRelationshipService().analyze()
+                ),
+            ),
+            (
+                "Powiązanie leczenia z typem wrzodu",
+                lambda: self.prepare_treatment_diagnosis_relationship_report(
+                    TreatmentDiagnosisRelationshipService().analyze()
+                ),
+            ),
+            (
+                "Rasa a czas leczenia",
+                lambda: self.prepare_breed_treatment_duration_report(
+                    BreedTreatmentDurationService().analyze()
+                ),
+            ),
+            (
+                "Typ wrzodu a czas leczenia w obrębie ras",
+                lambda: self.prepare_ulcer_breed_treatment_duration_report(
+                    UlcerBreedTreatmentDurationService().analyze()
+                ),
+            ),
+            (
+                "Stosowanie EMS a czas leczenia",
+                lambda: self.prepare_ems_treatment_duration_report(
+                    EmsTreatmentDurationService().analyze()
+                ),
+            ),
+            (
+                "Czas trwania problemu przed pierwszą wizytą",
+                lambda: self.prepare_duration_of_problem_stats_report(
+                    DurationOfProblemStatsService().analyze()
+                ),
+            ),
+            (
+                "Rozkład wymazów w miesiącach i latach",
+                lambda: self.prepare_micro_monthly_distribution_report(
+                    MicroMonthlyDistributionService().analyze()
+                ),
+            ),
+            (
+                "Leki stosowane przed wymazem",
+                lambda: self.prepare_pre_swab_drugs_report(
+                    PreSwabDrugsService().analyze()
+                ),
+            ),
+            (
+                "Powiązania patient_ID między tabelami",
+                lambda: self.prepare_patient_id_cross_table_report(
+                    PatientIdCrossTableSummaryService().analyze()
+                ),
+            ),
         )
 
-        return CombinedAnalysisReport(
-            report_title="Raport końcowy analizy automatycznej",
-            generation_context=(
-                "Wygenerowano: "
-                f"{datetime.now().strftime('%Y-%m-%d %H:%M')}. "
-                "Raport łączy osiem modułów analizy automatycznej."
+        sections: list[AnalysisSectionReport] = []
+        section_errors: list[tuple[str, str]] = []
+        total = len(section_specs)
+
+        for index, (section_title, builder) in enumerate(section_specs, start=1):
+            if progress_callback is not None:
+                progress_callback(section_title, index, total)
+            try:
+                sections.append(builder())
+            except Exception as exc:
+                message = str(exc).strip() or exc.__class__.__name__
+                section_errors.append((section_title, message))
+                sections.append(_build_failed_section_report(section_title, message))
+                log_error(
+                    "analysis_report",
+                    f"Sekcja raportu {section_title} nie powiodła się: {message}",
+                )
+
+        sections_tuple = tuple(sections)
+
+        return (
+            CombinedAnalysisReport(
+                report_title="Raport analizy automatycznej",
+                generation_context=(
+                    "Wygenerowano: "
+                    f"{datetime.now().strftime('%Y-%m-%d %H:%M')}. "
+                    f"Raport łączy {len(section_specs)} modułów analizy automatycznej."
+                ),
+                sections=sections_tuple,
+                source_data_description=_build_combined_source_data_description(
+                    sections_tuple
+                ),
+                applied_filters=_build_combined_applied_filters(),
+                dataset_dimensions=_build_combined_dataset_dimensions(),
+                verbal_analysis_summary=_build_combined_verbal_analysis_summary(
+                    sections_tuple
+                ),
+                section_overview_rows=_build_combined_section_overview_rows(
+                    sections_tuple
+                ),
             ),
-            sections=sections,
-            source_data_description=_build_combined_source_data_description(sections),
-            applied_filters=_build_combined_applied_filters(),
-            dataset_dimensions=_build_combined_dataset_dimensions(),
-            verbal_analysis_summary=_build_combined_verbal_analysis_summary(sections),
-            section_overview_rows=_build_combined_section_overview_rows(sections),
+            tuple(section_errors),
         )
 
     def prepare_final_automatic_analysis_report(
         self,
     ) -> CombinedAnalysisReport:
-        return self.prepare_combined_automatic_analysis_report()
+        report, _errors = self.prepare_combined_automatic_analysis_report()
+        return report
 
     def export_combined_automatic_analysis_report_pdf(
         self,
         destination: Path,
+        *,
+        progress_callback: Callable[[str, int, int], None] | None = None,
     ) -> str | None:
-        report = self.prepare_combined_automatic_analysis_report()
+        report, _errors = self.prepare_combined_automatic_analysis_report(
+            progress_callback=progress_callback,
+        )
         try:
             write_combined_analysis_report_pdf(report, destination)
         except OSError as exc:
@@ -1055,6 +1179,31 @@ def _resolve_dataset_path(dataset_name: str) -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+def resolve_dataset_label() -> str:
+    parts: list[str] = []
+    for dataset_name in ("patient.csv", "clinical.csv", "micro.csv"):
+        path = _resolve_dataset_path(dataset_name)
+        if path is not None:
+            parts.append(f"{dataset_name} ({path.parent.name}/{path.name})")
+    if not parts:
+        return "Brak zidentyfikowanych plików źródłowych."
+    return "; ".join(parts)
+
+
+def _build_failed_section_report(
+    section_title: str,
+    error_message: str,
+) -> AnalysisSectionReport:
+    return AnalysisSectionReport(
+        section_title=section_title,
+        source_labels=(),
+        summary_details=f"Nie udało się wygenerować tej sekcji: {error_message}",
+        interpretation_summary="",
+        table_blocks=(),
+        chart_specs=(),
+    )
 
 
 def _build_combined_source_data_description(

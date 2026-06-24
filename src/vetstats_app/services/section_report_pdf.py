@@ -28,6 +28,7 @@ from vetstats_app.analysis.chart_models import AnalysisChartSpec
 from vetstats_app.analysis.report_models import (
     AnalysisSectionReport,
     CombinedAnalysisReport,
+    FullVetStatsReport,
     ReportTableBlock,
 )
 from vetstats_app.services.analysis_chart_renderer import chart_spec_to_png_bytes
@@ -75,7 +76,83 @@ def write_combined_analysis_report_pdf(
     font_name = _register_unicode_font()
     styles = _build_report_styles(font_name)
     doc = _create_document(destination, report.report_title, font_name)
+    story = _build_combined_report_story(report, styles, font_name)
+    doc.build(story)
 
+
+def write_full_vetstats_report_pdf(
+    report: FullVetStatsReport,
+    destination: Path,
+) -> None:
+    destination = Path(destination)
+    if destination.suffix.lower() != ".pdf":
+        destination = destination.with_suffix(".pdf")
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    font_name = _register_unicode_font()
+    styles = _build_report_styles(font_name)
+    doc = _create_document(destination, report.report_title, font_name)
+
+    story: list = []
+    story.extend(
+        _build_title_page_story(
+            report_title=report.report_title,
+            generation_timestamp=report.generation_timestamp,
+            dataset_label=report.dataset_label,
+            styles=styles,
+        )
+    )
+    story.extend(_build_combined_report_story(report.automatic_report, styles, font_name))
+
+    if report.detailed_result is not None and report.detailed_result.is_success:
+        from vetstats_app.services.detailed_comparative_report_pdf import (
+            build_detailed_comparative_report_story,
+        )
+
+        story.append(NextPageTemplate("portrait"))
+        story.append(PageBreak())
+        story.append(
+            Paragraph(escape("Analiza szczegółowa"), styles["title"]),
+        )
+        story.append(Spacer(1, 6))
+        story.extend(
+            build_detailed_comparative_report_story(
+                report.detailed_result,
+                styles,
+                font_name,
+                include_top_title=False,
+            )
+        )
+    elif report.detailed_skipped_reason:
+        story.extend(
+            _build_skipped_section_story(
+                "Analiza szczegółowa",
+                report.detailed_skipped_reason,
+                styles,
+            )
+        )
+
+    if report.section_errors:
+        story.extend(
+            _build_section_errors_story(report.section_errors, styles),
+        )
+
+    story.extend(
+        _build_closing_section_story(
+            report.closing_summary,
+            styles,
+        )
+    )
+
+    doc.build(story)
+
+
+def _build_combined_report_story(
+    report: CombinedAnalysisReport,
+    styles: dict[str, ParagraphStyle],
+    font_name: str,
+) -> list:
     story: list = [
         Paragraph(escape(report.report_title), styles["cover_title"]),
         Spacer(1, 8),
@@ -144,12 +221,119 @@ def write_combined_analysis_report_pdf(
         for section in report.sections:
             story.append(Paragraph(escape(f"• {section.section_title}"), styles["body"]))
 
-    for index, section in enumerate(report.sections):
+    story.extend(_build_analysis_sections_story(report.sections, styles, font_name))
+    return story
+
+
+def _build_title_page_story(
+    *,
+    report_title: str,
+    generation_timestamp: str,
+    dataset_label: str,
+    styles: dict[str, ParagraphStyle],
+) -> list:
+    story: list = [Spacer(1, 36)]
+
+    logo_path = vetstats_logo_path()
+    if logo_path.is_file():
+        logo = Image(str(logo_path))
+        max_width = 70 * mm
+        aspect = logo.imageHeight / logo.imageWidth if logo.imageWidth else 1.0
+        logo.drawWidth = max_width
+        logo.drawHeight = max_width * aspect
+        available_width = _PORTRAIT_PAGE_SIZE[0] - (2 * _HORIZONTAL_MARGIN)
+        logo_table = Table(
+            [[logo]],
+            colWidths=[available_width],
+            style=TableStyle([("ALIGN", (0, 0), (-1, -1), "CENTER")]),
+        )
+        story.append(logo_table)
+        story.append(Spacer(1, 18))
+
+    story.extend(
+        [
+            Paragraph(escape("VetStats 2.0"), styles["cover_app_name"]),
+            Paragraph(escape(report_title), styles["cover_title"]),
+            Spacer(1, 10),
+            Paragraph(
+                escape(f"Data wygenerowania: {generation_timestamp}"),
+                styles["cover_meta"],
+            ),
+        ]
+    )
+
+    if dataset_label:
+        story.append(
+            Paragraph(escape(f"Źródło danych: {dataset_label}"), styles["cover_meta"])
+        )
+
+    story.append(PageBreak())
+    return story
+
+
+def _build_analysis_sections_story(
+    sections: tuple[AnalysisSectionReport, ...],
+    styles: dict[str, ParagraphStyle],
+    font_name: str,
+) -> list:
+    story: list = []
+    for section in sections:
         story.append(NextPageTemplate("portrait"))
         story.append(PageBreak())
         story.extend(_build_section_story(section, styles, font_name))
+    return story
 
-    doc.build(story)
+
+def _build_skipped_section_story(
+    section_title: str,
+    reason: str,
+    styles: dict[str, ParagraphStyle],
+) -> list:
+    return [
+        NextPageTemplate("portrait"),
+        PageBreak(),
+        Paragraph(escape(section_title), styles["title"]),
+        Spacer(1, 6),
+        Paragraph(escape(reason), styles["body"]),
+    ]
+
+
+def _build_section_errors_story(
+    section_errors: tuple[tuple[str, str], ...],
+    styles: dict[str, ParagraphStyle],
+) -> list:
+    story: list = [
+        NextPageTemplate("portrait"),
+        PageBreak(),
+        Paragraph(escape("Uwagi do sekcji raportu"), styles["title"]),
+        Spacer(1, 6),
+    ]
+    for section_title, message in section_errors:
+        story.append(
+            Paragraph(
+                escape(f"{section_title}: {message}"),
+                styles["body"],
+            )
+        )
+    return story
+
+
+def _build_closing_section_story(
+    closing_summary: str,
+    styles: dict[str, ParagraphStyle],
+) -> list:
+    summary = closing_summary.strip() or (
+        "Raport łączy wyniki analizy automatycznej oraz — jeśli skonfigurowano — "
+        "analizę szczegółową porównania grup. Szczegółowe tabele, interpretacje "
+        "i wykresy znajdują się w poprzednich sekcjach dokumentu."
+    )
+    return [
+        NextPageTemplate("portrait"),
+        PageBreak(),
+        Paragraph(escape("Podsumowanie końcowe"), styles["title"]),
+        Spacer(1, 6),
+        Paragraph(escape(summary), styles["body"]),
+    ]
 
 
 def _create_document(destination: Path, title: str, font_name: str) -> BaseDocTemplate:
@@ -301,6 +485,27 @@ def _build_report_styles(font_name: str) -> dict[str, ParagraphStyle]:
             fontSize=18,
             leading=22,
             spaceAfter=8,
+            alignment=1,
+        ),
+        "cover_app_name": ParagraphStyle(
+            "CombinedCoverAppName",
+            parent=styles["Title"],
+            fontName=font_name,
+            fontSize=22,
+            leading=26,
+            spaceAfter=6,
+            alignment=1,
+            textColor=colors.HexColor("#1F2937"),
+        ),
+        "cover_meta": ParagraphStyle(
+            "CombinedCoverMeta",
+            parent=styles["Normal"],
+            fontName=font_name,
+            fontSize=11,
+            leading=15,
+            spaceAfter=4,
+            alignment=1,
+            textColor=colors.HexColor("#4B5563"),
         ),
         "title": ParagraphStyle(
             "ReportTitle",

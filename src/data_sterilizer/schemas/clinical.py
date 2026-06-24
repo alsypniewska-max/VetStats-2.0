@@ -49,7 +49,40 @@ ALLOWED_ULCER_TYPES = frozenset({"s", "e", "p", "m", "n", "sceed", "x"})
 ALLOWED_FARMACOLOGY = frozenset({"f", "s"})
 ALLOWED_TOPICAL_SYSTEMIC = frozenset({"t", "s", "ts"})
 ALLOWED_EMS = frozenset({"yes", "no", "xxx"})
-ALLOWED_SURGERY_TYPES = frozenset({"3deb", "psu", "ps", "pk", "psuk", "resection"})
+TYPE_OF_SURGERY_CODE_ORDER: tuple[str, ...] = (
+    "3deb",
+    "deb",
+    "debkol",
+    "kol",
+    "psu",
+    "psuk",
+    "ps",
+    "pk",
+    "resection",
+)
+TYPE_OF_SURGERY_SHORT_LABELS: dict[str, str] = {
+    "3deb": "3DEB",
+    "deb": "deb",
+    "debkol": "debkol",
+    "kol": "kol",
+    "psu": "PSU",
+    "psuk": "PSUK",
+    "ps": "PS",
+    "pk": "PK",
+    "resection": "resection",
+}
+TYPE_OF_SURGERY_DISPLAY_LABELS: dict[str, str] = {
+    "3deb": "Debridement + opatrunek z trzeciej powieki",
+    "deb": "debridement",
+    "debkol": "debridement + soczewka kolagenowa",
+    "kol": "soczewka kolagenowa",
+    "psu": "Przeszczep spojówkowy uszypułowany",
+    "psuk": "Przeszczep spojówkowy uszypułowany + kolagenowy",
+    "ps": "Przeszczep spojówkowy wyspowy",
+    "pk": "Przeszczep kolagenowy",
+    "resection": "Resekcja (martwaka)",
+}
+ALLOWED_SURGERY_TYPES = frozenset(TYPE_OF_SURGERY_DISPLAY_LABELS)
 ALLOWED_DRUG_SENTINELS = frozenset({"x", "xxx"})
 ALLOWED_HOW_ENDED = frozenset({"good", "no followup", "enucleation", "xxx"})
 EMPTY_VALUE_REPLACEMENT = "xxx"

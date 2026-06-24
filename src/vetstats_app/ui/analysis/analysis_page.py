@@ -15,6 +15,7 @@ class AnalysisPage(QWidget):
 
         automatic_section = AutomaticAnalysisSection()
         detailed_section = DetailedAnalysisSection()
+        self._detailed_section = detailed_section
 
         content_stack = QStackedWidget()
         content_stack.addWidget(automatic_section)
@@ -44,6 +45,14 @@ class AnalysisPage(QWidget):
 
         section_switch_bar.set_current_section(0)
         self._on_section_changed(0)
+
+    def detailed_analysis_context(self):
+        from vetstats_app.services.full_report_service import DetailedAnalysisContext
+
+        return DetailedAnalysisContext(
+            state=self._detailed_section.collect_state_for_full_report(),
+            last_result=self._detailed_section.last_result(),
+        )
 
     def _on_section_changed(self, index: int) -> None:
         self._content_stack.setCurrentIndex(index)

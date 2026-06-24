@@ -119,6 +119,21 @@ def test_validate_clinical_accepts_semicolon_surgery_values() -> None:
     assert report.error_count == 0
 
 
+def test_validate_clinical_accepts_new_surgery_type_codes() -> None:
+    for surgery_value in ("deb", "debkol", "kol", "deb;kol"):
+        report = validate_clinical(
+            _clinical_frame([
+                _valid_row(
+                    farmacology_surgery="s",
+                    type_of_surgery=surgery_value,
+                    top_treatment_after="biodacyna",
+                    sys_treatment_after="x",
+                )
+            ])
+        )
+        assert report.error_count == 0, surgery_value
+
+
 def test_validate_clinical_rejects_invalid_how_ended() -> None:
     report = validate_clinical(_clinical_frame([_valid_row(how_ended="continuation")]))
     assert report.error_count == 1

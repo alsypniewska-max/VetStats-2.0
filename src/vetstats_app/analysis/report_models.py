@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
+from typing import TYPE_CHECKING
 
 from vetstats_app.analysis.chart_models import AnalysisChartSpec
+
+if TYPE_CHECKING:
+    from vetstats_app.analysis.detailed_comparative_analysis import (
+        DetailedComparativeAnalysisResult,
+    )
 
 
 @dataclass(frozen=True)
@@ -52,3 +57,17 @@ class CombinedAnalysisReport:
     dataset_dimensions: str = ""
     verbal_analysis_summary: str = ""
     section_overview_rows: tuple[tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class FullVetStatsReport:
+    """Master report combining automatic analysis modules and detailed analysis."""
+
+    report_title: str
+    generation_timestamp: str
+    dataset_label: str
+    automatic_report: CombinedAnalysisReport
+    detailed_result: DetailedComparativeAnalysisResult | None = None
+    detailed_skipped_reason: str = ""
+    closing_summary: str = ""
+    section_errors: tuple[tuple[str, str], ...] = ()

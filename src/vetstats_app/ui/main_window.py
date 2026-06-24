@@ -15,11 +15,12 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 600)
 
         tabs = QTabWidget()
+        analysis_page = AnalysisPage()
         tabs.addTab(PreviewPage(), "Preview")
-        tabs.addTab(AnalysisPage(), "Analysis")
+        tabs.addTab(analysis_page, "Analysis")
         tabs.addTab(PatientHistorySection(), "Patient History")
         tabs.addTab(LogsSection(), "Logs")
-        tabs.addTab(ReportPage(), "Report")
+        tabs.addTab(ReportPage(detailed_context_provider=analysis_page.detailed_analysis_context), "Report")
 
         self.setCentralWidget(tabs)
         _configure_app_status_bar(self)

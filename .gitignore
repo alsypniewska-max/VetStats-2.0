@@ -18,3 +18,13 @@ venv/
 
 # Tests
 .pytest_cache/
+
+# Local caches and generated launch artifacts
+.matplotlib_cache/
+.pdf_verify/
+VetStats 2.0.app/
+
+# Local export artifacts and runtime logs
+*.pdf
+*.tiff
+src/vetstats_app/logs/

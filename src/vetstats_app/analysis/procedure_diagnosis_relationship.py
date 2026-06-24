@@ -6,7 +6,13 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from data_sterilizer.schemas.clinical import ALLOWED_SURGERY_TYPES, TYPE_OF_SURGERY_COLUMN
+from data_sterilizer.schemas.clinical import (
+    ALLOWED_SURGERY_TYPES,
+    TYPE_OF_SURGERY_CODE_ORDER,
+    TYPE_OF_SURGERY_COLUMN,
+    TYPE_OF_SURGERY_DISPLAY_LABELS,
+    TYPE_OF_SURGERY_SHORT_LABELS,
+)
 from vetstats_app.analysis.report_models import ReportTableBlock
 from vetstats_app.analysis.diagnosis_frequency import (
     DIAGNOSIS_LABELS,
@@ -16,22 +22,10 @@ from vetstats_app.analysis.diagnosis_frequency import (
 )
 
 PROCEDURE_CODE_MAPPING: list[tuple[str, str]] = [
-    ("3deb", "3DEB"),
-    ("psu", "PSU"),
-    ("ps", "PS"),
-    ("pk", "PK"),
-    ("psuk", "PSUK"),
-    ("resection", "resection"),
+    (code, TYPE_OF_SURGERY_SHORT_LABELS[code]) for code in TYPE_OF_SURGERY_CODE_ORDER
 ]
 
-PROCEDURE_DISPLAY_LABELS: dict[str, str] = {
-    "3deb": "Debridement + opatrunek z trzeciej powieki",
-    "psu": "Przeszczep spojówkowy uszypułowany",
-    "psuk": "Przeszczep spojówkowy uszypułowany + kolagenowy",
-    "ps": "Przeszczep spojówkowy wyspowy",
-    "pk": "Przeszczep kolagenowy",
-    "resection": "Resekcja (martwaka)",
-}
+PROCEDURE_DISPLAY_LABELS: dict[str, str] = dict(TYPE_OF_SURGERY_DISPLAY_LABELS)
 
 SUMMARY_RELATIONSHIP_TABLE_COLUMNS = (
     "Kod",

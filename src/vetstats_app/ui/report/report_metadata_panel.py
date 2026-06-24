@@ -1,9 +1,8 @@
 from PyQt6.QtWidgets import QGroupBox, QLabel, QVBoxLayout, QWidget
 
-SECTION_TITLE = "Analiza automatyczna — raport podsumowujący"
-SOURCE_DATA = "patient.csv, clinical.csv, micro.csv (placeholder)"
-APPLIED_FILTERS = "Brak filtrów (placeholder)"
-ROW_COLUMN_COUNTS = "patient: 120×15, clinical: 340×12, micro: 890×18 (placeholder)"
+from vetstats_app.services.analysis_report_service import resolve_dataset_label
+
+SECTION_TITLE = "VetStats 2.0 — pełny raport analizy"
 
 
 class ReportMetadataPanel(QWidget):
@@ -13,10 +12,20 @@ class ReportMetadataPanel(QWidget):
         group = QGroupBox("Metadane raportu")
         group_layout = QVBoxLayout(group)
 
-        group_layout.addWidget(QLabel(f"Tytuł sekcji: {SECTION_TITLE}"))
-        group_layout.addWidget(QLabel(f"Dane źródłowe: {SOURCE_DATA}"))
-        group_layout.addWidget(QLabel(f"Zastosowane filtry: {APPLIED_FILTERS}"))
-        group_layout.addWidget(QLabel(f"Liczba wierszy i kolumn: {ROW_COLUMN_COUNTS}"))
+        group_layout.addWidget(QLabel(f"Tytuł raportu: {SECTION_TITLE}"))
+        group_layout.addWidget(QLabel("Tytuł strony: Raport analizy"))
+        group_layout.addWidget(
+            QLabel(
+                "Źródło danych: "
+                f"{resolve_dataset_label()}"
+            )
+        )
+        group_layout.addWidget(
+            QLabel(
+                "Filtry: zgodnie z regułami poszczególnych modułów analizy automatycznej "
+                "oraz bieżącą konfiguracją analizy szczegółowej."
+            )
+        )
 
         layout = QVBoxLayout(self)
         layout.addWidget(group)

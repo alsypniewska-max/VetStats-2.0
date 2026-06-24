@@ -2,20 +2,30 @@ from PyQt6.QtWidgets import QGroupBox, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 REPORT_SECTIONS = [
     (
-        "Wyniki opisowe",
-        "Placeholder: opisowe podsumowanie wyników analizy.",
+        "Strona tytułowa",
+        "Logo VetStats, nazwa aplikacji, tytuł „Raport analizy”, data wygenerowania "
+        "oraz informacja o źródle danych.",
     ),
     (
-        "Tabele podsumowujące",
-        "Placeholder: tabele podsumowujące dane weterynaryjne i antybiogram.",
+        "Podsumowanie raportu",
+        "Opis źródeł danych, filtrów, wymiarów zbiorów, skrót interpretacji oraz "
+        "przegląd sekcji analizy automatycznej.",
     ),
     (
-        "Wykresy",
-        (
-            "Placeholder: wykresy wyników analizy. "
-            "Wykresy przeznaczone do układu poziomego; "
-            "tekst i tabele przeznaczone do układu pionowego A4."
-        ),
+        "Analiza automatyczna (15 modułów)",
+        "Po kolei wszystkie moduły z zakładki Analysis: charakterystyka populacji, "
+        "częstość rozpoznań, leczenie, mikrobiologia, oporność, powiązania kliniczne, "
+        "czas leczenia, EMS, czas problemu, rozkład wymazów, leki przed wymazem "
+        "oraz powiązania patient_ID — każdy z tabelami i wykresami.",
+    ),
+    (
+        "Analiza szczegółowa",
+        "Bieżąca konfiguracja porównania grup z zakładki Analysis (opis grup, "
+        "statystyka opisowa, testy statystyczne i wykresy).",
+    ),
+    (
+        "Podsumowanie końcowe",
+        "Krótkie zamknięcie raportu z informacją o zakresie dołączonych sekcji.",
     ),
 ]
 
@@ -26,10 +36,10 @@ class ReportStructurePanel(QWidget):
 
         sections_widget = QWidget()
         sections_layout = QVBoxLayout(sections_widget)
-        for title, placeholder_text in REPORT_SECTIONS:
+        for title, description in REPORT_SECTIONS:
             group = QGroupBox(title)
             group_layout = QVBoxLayout(group)
-            label = QLabel(placeholder_text)
+            label = QLabel(description)
             label.setWordWrap(True)
             group_layout.addWidget(label)
             sections_layout.addWidget(group)
