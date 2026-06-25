@@ -7,6 +7,9 @@ from datetime import datetime
 
 DATASET_NAME = "clinical"
 
+HOW_ENDED_COLUMN = "how_ended"
+DATE_LAST_APPOINTMENT_COLUMN = "date_last_appointment"
+
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "patient_ID",
     "eye",
@@ -23,6 +26,9 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "how_ended",
 )
 
+OPTIONAL_COLUMNS: tuple[str, ...] = (DATE_LAST_APPOINTMENT_COLUMN,)
+CANONICAL_COLUMNS: tuple[str, ...] = REQUIRED_COLUMNS + OPTIONAL_COLUMNS
+
 TEXT_COLUMNS: tuple[str, ...] = REQUIRED_COLUMNS
 
 PATIENT_ID_COLUMN = "patient_ID"
@@ -37,7 +43,6 @@ EMS_COLUMN = "EMS"
 TYPE_OF_SURGERY_COLUMN = "type_of_surgery"
 TOP_TREATMENT_COLUMN = "top_treatment_after"
 SYS_TREATMENT_COLUMN = "sys_treatment_after"
-HOW_ENDED_COLUMN = "how_ended"
 
 DATE_PATTERN = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
 DURATION_PATTERN = re.compile(
@@ -46,7 +51,7 @@ DURATION_PATTERN = re.compile(
 
 ALLOWED_EYES = frozenset({"r", "l", "b", "xxx"})
 ALLOWED_ULCER_TYPES = frozenset({"s", "e", "p", "m", "n", "sceed", "x"})
-ALLOWED_FARMACOLOGY = frozenset({"f", "s"})
+ALLOWED_FARMACOLOGY = frozenset({"f", "s", "xxx"})
 ALLOWED_TOPICAL_SYSTEMIC = frozenset({"t", "s", "ts"})
 ALLOWED_EMS = frozenset({"yes", "no", "xxx"})
 TYPE_OF_SURGERY_CODE_ORDER: tuple[str, ...] = (
@@ -84,10 +89,18 @@ TYPE_OF_SURGERY_DISPLAY_LABELS: dict[str, str] = {
 }
 ALLOWED_SURGERY_TYPES = frozenset(TYPE_OF_SURGERY_DISPLAY_LABELS)
 ALLOWED_DRUG_SENTINELS = frozenset({"x", "xxx"})
-ALLOWED_HOW_ENDED = frozenset({"good", "no followup", "enucleation", "xxx"})
+ALLOWED_HOW_ENDED = frozenset({"good", "no followup", "enucleation", "continuation", "xxx"})
+HOW_ENDED_REQUIRES_X_DATE_LAST = frozenset({"no followup", "continuation"})
 EMPTY_VALUE_REPLACEMENT = "xxx"
 UNKNOWN_VALUE = "xxx"
 NOT_APPLICABLE_VALUE = "x"
+
+DURATION_UNIT_TYPO_MAP: dict[str, str] = {
+    "monts": "months",
+    "mont": "month",
+    "weks": "weeks",
+    "wek": "week",
+}
 
 
 def normalize_column_names(columns: list[str]) -> dict[str, str]:
@@ -98,7 +111,7 @@ def normalize_column_names(columns: list[str]) -> dict[str, str]:
         for column in columns
     }
 
-    for canonical in REQUIRED_COLUMNS:
+    for canonical in CANONICAL_COLUMNS:
         actual = lower_to_actual.get(canonical.lower())
         if actual is not None and actual != canonical:
             rename_map[actual] = canonical
@@ -124,6 +137,30 @@ def is_valid_duration(value: str) -> bool:
     if value == UNKNOWN_VALUE:
         return True
     return DURATION_PATTERN.match(value) is not None
+
+
+def normalize_duration_value(value: str) -> str:
+    """Fix common unit typos in duration_of_problem values."""
+    stripped = str(value).strip().lower()
+    if stripped == UNKNOWN_VALUE or is_valid_duration(stripped):
+        return stripped
+
+    if " " not in stripped:
+        return stripped
+
+    number, unit = stripped.rsplit(" ", 1)
+    corrected_unit = DURATION_UNIT_TYPO_MAP.get(unit, unit)
+    if corrected_unit == unit:
+        return stripped
+    return f"{number} {corrected_unit}"
+
+
+def parse_clinical_date(value: str):
+    """Return a datetime for a valid clinical date string, else None."""
+    if not is_valid_clinical_date(value):
+        return None
+    day_text, month_text, year_text = value.split(".")
+    return datetime(int(year_text), int(month_text), int(day_text))
 
 
 def is_trailing_empty_column(column_name: str) -> bool:

@@ -6,7 +6,6 @@ import pandas as pd
 
 from data_sterilizer.io.loader import SOURCE_ROW_COLUMN
 from data_sterilizer.schemas.clinical import (
-    ALLOWED_DRUG_SENTINELS,
     ALLOWED_EMS,
     ALLOWED_EYES,
     ALLOWED_FARMACOLOGY,
@@ -16,12 +15,14 @@ from data_sterilizer.schemas.clinical import (
     ALLOWED_ULCER_TYPES,
     DATASET_NAME,
     DATE_APPOINTMENT_COLUMN,
+    DATE_LAST_APPOINTMENT_COLUMN,
     DRUG_BEFORE_MICRO_COLUMN,
     DURATION_COLUMN,
     EMS_COLUMN,
     EYE_COLUMN,
     FARMACOLOGY_SURGERY_COLUMN,
     HOW_ENDED_COLUMN,
+    HOW_ENDED_REQUIRES_X_DATE_LAST,
     NOT_APPLICABLE_VALUE,
     REQUIRED_COLUMNS,
     SYS_TREATMENT_COLUMN,
@@ -33,6 +34,7 @@ from data_sterilizer.schemas.clinical import (
     is_valid_clinical_date,
     is_valid_duration,
     normalize_column_names,
+    parse_clinical_date,
 )
 from data_sterilizer.validation.issues import Issue, Severity, ValidationReport
 
@@ -62,6 +64,7 @@ def validate_clinical(frame: pd.DataFrame) -> ValidationReport:
         return report
 
     working = frame.rename(columns=rename_map)
+    has_date_last_appointment = DATE_LAST_APPOINTMENT_COLUMN in working.columns
 
     for row_index, row in working.iterrows():
         source_row = int(row[SOURCE_ROW_COLUMN])
@@ -99,28 +102,40 @@ def validate_clinical(frame: pd.DataFrame) -> ValidationReport:
 
         surgery_value = str(row[TYPE_OF_SURGERY_COLUMN]).strip().lower()
         _validate_type_of_surgery(report, source_row, surgery_value)
-        _validate_surgery_dependencies(
-            report,
-            source_row=source_row,
-            farmacology=farm_value,
-            surgery_value=surgery_value,
-        )
+        if farm_value != UNKNOWN_VALUE:
+            _validate_surgery_dependencies(
+                report,
+                source_row=source_row,
+                farmacology=farm_value,
+                surgery_value=surgery_value,
+            )
 
         top_treatment_value = str(row[TOP_TREATMENT_COLUMN]).strip().lower()
         sys_treatment_value = str(row[SYS_TREATMENT_COLUMN]).strip().lower()
         _validate_semicolon_field(report, source_row, TOP_TREATMENT_COLUMN, top_treatment_value)
         _validate_semicolon_field(report, source_row, SYS_TREATMENT_COLUMN, sys_treatment_value)
-        _validate_treatment_dependencies(
-            report,
-            source_row=source_row,
-            farmacology=farm_value,
-            top_treatment=top_treatment_value,
-            sys_treatment=sys_treatment_value,
-        )
+        if farm_value == "f":
+            _validate_treatment_dependencies(
+                report,
+                source_row=source_row,
+                farmacology=farm_value,
+                top_treatment=top_treatment_value,
+                sys_treatment=sys_treatment_value,
+            )
 
         how_ended_value = str(row[HOW_ENDED_COLUMN]).strip().lower()
         if how_ended_value not in ALLOWED_HOW_ENDED:
             _add_value_error(report, source_row, HOW_ENDED_COLUMN, how_ended_value)
+
+        if has_date_last_appointment:
+            date_last_value = str(row[DATE_LAST_APPOINTMENT_COLUMN]).strip().lower()
+            _validate_date_last_appointment(
+                report,
+                source_row=source_row,
+                how_ended=how_ended_value,
+                first_appointment=date_value,
+                date_last_appointment=date_last_value,
+            )
 
     return report
 
@@ -249,3 +264,47 @@ def _validate_treatment_dependencies(
                     message="sys_treatment_after must be x when farmacology_surgery is f",
                 )
             )
+
+
+def _validate_date_last_appointment(
+    report: ValidationReport,
+    *,
+    source_row: int,
+    how_ended: str,
+    first_appointment: str,
+    date_last_appointment: str,
+) -> None:
+    if how_ended in HOW_ENDED_REQUIRES_X_DATE_LAST:
+        if date_last_appointment != NOT_APPLICABLE_VALUE:
+            report.add(
+                Issue(
+                    severity=Severity.ERROR,
+                    dataset=DATASET_NAME,
+                    row=source_row,
+                    column=DATE_LAST_APPOINTMENT_COLUMN,
+                    message=(
+                        "date_last_appointment must be x when how_ended is "
+                        f"{how_ended}"
+                    ),
+                )
+            )
+        return
+
+    first_date = parse_clinical_date(first_appointment)
+    last_date = parse_clinical_date(date_last_appointment)
+    if first_date is None or last_date is None:
+        return
+
+    if last_date <= first_date:
+        report.add(
+            Issue(
+                severity=Severity.ERROR,
+                dataset=DATASET_NAME,
+                row=source_row,
+                column=DATE_LAST_APPOINTMENT_COLUMN,
+                message=(
+                    "date_last_appointment must be later than "
+                    "date_appointment_first_before_micro"
+                ),
+            )
+        )

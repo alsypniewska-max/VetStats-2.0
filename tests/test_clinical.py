@@ -14,14 +14,9 @@ from data_sterilizer.schemas.clinical import (
     is_valid_clinical_date,
     is_valid_duration,
     normalize_column_names,
+    normalize_duration_value,
 )
 from data_sterilizer.validation.clinical import validate_clinical
-
-
-def _clinical_frame(rows: list[dict[str, str]]) -> pd.DataFrame:
-    frame = pd.DataFrame(rows)
-    frame[SOURCE_ROW_COLUMN] = range(2, len(frame) + 2)
-    return frame
 
 
 def _valid_row(**overrides: str) -> dict[str, str]:
@@ -42,6 +37,17 @@ def _valid_row(**overrides: str) -> dict[str, str]:
     }
     row.update(overrides)
     return row
+
+
+def _clinical_frame(rows: list[dict[str, str]]) -> pd.DataFrame:
+    normalized_rows = []
+    for row in rows:
+        merged = _valid_row()
+        merged.update(row)
+        normalized_rows.append(merged)
+    frame = pd.DataFrame(normalized_rows)
+    frame[SOURCE_ROW_COLUMN] = range(2, len(frame) + 2)
+    return frame
 
 
 def test_schema_required_columns_match_csv() -> None:
@@ -71,6 +77,12 @@ def test_is_valid_duration_accepts_xxx_and_float_with_unit() -> None:
     assert is_valid_duration("2 weeks") is True
     assert is_valid_duration("1,5 months") is True
     assert is_valid_duration("4 monts") is False
+
+
+def test_normalize_duration_value_fixes_common_unit_typos() -> None:
+    assert normalize_duration_value("4 monts") == "4 months"
+    assert normalize_duration_value("2 weks") == "2 weeks"
+    assert normalize_duration_value("2 weeks") == "2 weeks"
 
 
 def test_validate_clinical_allows_repeated_patient_id() -> None:
@@ -134,10 +146,111 @@ def test_validate_clinical_accepts_new_surgery_type_codes() -> None:
         assert report.error_count == 0, surgery_value
 
 
-def test_validate_clinical_rejects_invalid_how_ended() -> None:
+def test_validate_clinical_accepts_continuation_how_ended() -> None:
     report = validate_clinical(_clinical_frame([_valid_row(how_ended="continuation")]))
+    assert report.error_count == 0
+
+
+def test_validate_clinical_accepts_farmacology_surgery_xxx() -> None:
+    report = validate_clinical(
+        _clinical_frame([_valid_row(farmacology_surgery="xxx", type_of_surgery="ps")])
+    )
+    assert report.error_count == 0
+
+
+def test_validate_clinical_allows_treatment_x_when_surgery_is_not_x() -> None:
+    report = validate_clinical(
+        _clinical_frame([
+            _valid_row(
+                farmacology_surgery="s",
+                type_of_surgery="ps",
+                top_treatment_after="x",
+                sys_treatment_after="x",
+            )
+        ])
+    )
+    assert report.error_count == 0
+
+
+def test_validate_clinical_rejects_invalid_how_ended() -> None:
+    report = validate_clinical(_clinical_frame([_valid_row(how_ended="badstatus")]))
     assert report.error_count == 1
     assert report.issues[0].column == "how_ended"
+
+
+def test_validate_clinical_requires_date_last_after_first_appointment() -> None:
+    frame = _clinical_frame([
+        _valid_row(
+            date_appointment_first_before_micro="10.01.2025",
+            date_last_appointment="3.01.2025",
+        )
+    ])
+    report = validate_clinical(frame)
+    assert any(
+        issue.column == "date_last_appointment"
+        and "later than" in issue.message
+        for issue in report.issues
+    )
+
+
+def test_validate_clinical_requires_x_date_last_for_continuation() -> None:
+    frame = _clinical_frame([
+        _valid_row(
+            how_ended="continuation",
+            date_last_appointment="15.01.2025",
+        )
+    ])
+    report = validate_clinical(frame)
+    assert any(
+        issue.column == "date_last_appointment" and "must be x" in issue.message
+        for issue in report.issues
+    )
+
+
+def test_clean_clinical_corrects_farmacology_surgery_dependencies() -> None:
+    frame = _clinical_frame([
+        _valid_row(
+            farmacology_surgery="f",
+            type_of_surgery="ps",
+            top_treatment_after="biodacyna",
+            sys_treatment_after="x",
+        ),
+        _valid_row(
+            farmacology_surgery="s",
+            type_of_surgery="x",
+            top_treatment_after="x",
+            sys_treatment_after="x",
+        ),
+    ])
+
+    cleaned, report = clean_clinical(frame)
+
+    assert cleaned.loc[0, "farmacology_surgery"] == "s"
+    assert cleaned.loc[1, "farmacology_surgery"] == "f"
+    assert any("farmacology_surgery" in correction.message for correction in report.corrections)
+
+
+def test_clean_clinical_normalizes_duration_typos() -> None:
+    frame = _clinical_frame([_valid_row(duration_of_problem="4 monts")])
+
+    cleaned, report = clean_clinical(frame)
+
+    assert cleaned.loc[0, "duration_of_problem"] == "4 months"
+    assert any("duration_of_problem" in correction.message for correction in report.corrections)
+
+
+def test_clean_clinical_normalizes_optional_date_last_appointment() -> None:
+    frame = _clinical_frame([
+        _valid_row(how_ended="continuation", date_last_appointment=""),
+        _valid_row(how_ended="good", date_last_appointment=""),
+    ])
+
+    cleaned, report = clean_clinical(frame)
+
+    assert "date_last_appointment" in cleaned.columns
+    assert cleaned.loc[0, "date_last_appointment"] == "x"
+    assert cleaned.loc[1, "date_last_appointment"] == "xxx"
+    assert any("date_last_appointment" in correction.message for correction in report.corrections)
 
 
 def test_clean_clinical_lowercases_values_and_replaces_empty_how_ended() -> None:

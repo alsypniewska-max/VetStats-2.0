@@ -14,6 +14,7 @@ from data_sterilizer.schemas.patient import (
     REQUIRED_COLUMNS,
     is_valid_date_of_birth,
     normalize_column_names,
+    normalize_other_diseases_opht_tokens,
 )
 from data_sterilizer.validation.issues import Severity
 from data_sterilizer.validation.patient import validate_patient
@@ -151,6 +152,36 @@ def test_validate_patient_rejects_empty_semicolon_segments() -> None:
 
     assert report.error_count == 1
     assert report.issues[0].column == "diseases_not_opht"
+
+
+def test_normalize_other_diseases_opht_tokens_fixes_distichiasis_typo() -> None:
+    assert normalize_other_diseases_opht_tokens("didtihiasis") == "distichiasis"
+    assert (
+        normalize_other_diseases_opht_tokens("entropium;didtihiasis;cataract")
+        == "entropium;distichiasis;cataract"
+    )
+
+
+def test_clean_patient_fixes_other_diseases_opht_token_typo() -> None:
+    frame = _patient_frame(
+        [
+            {
+                "patient_ID": "1",
+                "name": "A",
+                "date_of_birth": "1.01.2020",
+                "species": "dog",
+                "breed": "mix",
+                "gender": "M",
+                "diseases_not_opht": "x",
+                "other_diseases_opht": "didtihiasis;cataract",
+            }
+        ]
+    )
+
+    cleaned, report = clean_patient(frame)
+
+    assert cleaned.loc[0, "other_diseases_opht"] == "distichiasis;cataract"
+    assert any("other_diseases_opht" in correction.message for correction in report.corrections)
 
 
 def test_clean_patient_drops_unnamed_column_and_lowercases_values() -> None:

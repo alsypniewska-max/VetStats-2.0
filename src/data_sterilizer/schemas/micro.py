@@ -64,6 +64,7 @@ GLOBAL_EMPTY_COLUMNS: tuple[str, ...] = (
 )
 
 DATE_PATTERN = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
+RESULT_ID_YEAR_PATTERN = re.compile(r"^\d+/(\d{4})$")
 ALLOWED_GROWTH = frozenset({"heavy", "scant", "x"})
 ALLOWED_SUSCEPTIBILITY = frozenset({"+++", "+", "0", "x"})
 ALLOWED_POSITIVE_SUSCEPTIBILITY = frozenset({"+++", "+", "0"})
@@ -114,6 +115,22 @@ def parse_micro_date(value: str) -> datetime | None:
 
 def format_micro_date(value: datetime) -> str:
     return f"{value.day}.{value.month}.{value.year}"
+
+
+def parse_result_id_year(result_id: str) -> int | None:
+    """Extract the 4-digit year suffix from result_ID values such as 003/2025."""
+    match = RESULT_ID_YEAR_PATTERN.match(str(result_id).strip())
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def replace_micro_date_year(date_value: str, year: int) -> str | None:
+    """Replace only the year in a valid micro date string."""
+    if not is_valid_micro_date(date_value):
+        return None
+    day_text, month_text, _year_text = date_value.split(".")
+    return f"{day_text}.{month_text}.{year}"
 
 
 def subtract_one_day(value: str) -> str | None:

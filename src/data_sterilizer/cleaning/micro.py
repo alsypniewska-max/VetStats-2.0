@@ -18,6 +18,7 @@ from data_sterilizer.schemas.micro import (
     BACTERIA_COLUMN,
     DATASET_NAME,
     DATE_COLLECT_COLUMN,
+    DATE_COLUMNS,
     DATE_RECEIVED_COLUMN,
     DUPLICATE_KEY_COLUMNS,
     EMPTY_VALUE_REPLACEMENT,
@@ -26,10 +27,14 @@ from data_sterilizer.schemas.micro import (
     NEGATIVE_BACTERIA_VALUE,
     NOT_APPLICABLE_VALUE,
     REQUIRED_COLUMNS,
+    RESULT_ID_COLUMN,
     SUSCEPTIBILITY_COLUMNS,
     is_missing_date_collect,
     is_trailing_empty_column,
+    is_valid_micro_date,
     normalize_column_names,
+    parse_result_id_year,
+    replace_micro_date_year,
     subtract_one_day,
 )
 
@@ -82,6 +87,18 @@ def clean_micro(frame: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
             Correction(
                 dataset=DATASET_NAME,
                 message=f"Filled {filled_dates} missing date_collect value(s) from date_received minus 1 day",
+            )
+        )
+
+    year_corrections = _sync_date_years_with_result_id(cleaned)
+    if year_corrections:
+        report.add(
+            Correction(
+                dataset=DATASET_NAME,
+                message=(
+                    "Aligned micro date year(s) with result_ID in "
+                    f"{year_corrections} row(s)"
+                ),
             )
         )
 
@@ -164,3 +181,29 @@ def clean_micro(frame: pd.DataFrame) -> tuple[pd.DataFrame, CleaningReport]:
         ordered_columns.append(SOURCE_ROW_COLUMN)
     cleaned = cleaned[ordered_columns]
     return cleaned, report
+
+
+def _sync_date_years_with_result_id(frame: pd.DataFrame) -> int:
+    corrected_rows = 0
+    for row_index, row in frame.iterrows():
+        result_year = parse_result_id_year(str(row[RESULT_ID_COLUMN]).strip())
+        if result_year is None:
+            continue
+
+        row_changed = False
+        for date_column in DATE_COLUMNS:
+            date_value = str(row[date_column]).strip()
+            if not is_valid_micro_date(date_value):
+                continue
+            _day, _month, year_text = date_value.split(".")
+            if int(year_text) == result_year:
+                continue
+            replacement = replace_micro_date_year(date_value, result_year)
+            if replacement is None or replacement == date_value:
+                continue
+            frame.at[row_index, date_column] = replacement
+            row_changed = True
+
+        if row_changed:
+            corrected_rows += 1
+    return corrected_rows

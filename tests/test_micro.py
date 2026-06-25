@@ -13,6 +13,7 @@ from data_sterilizer.schemas.micro import (
     ANTIBIOTIC_COLUMNS,
     REQUIRED_COLUMNS,
     normalize_column_names,
+    parse_result_id_year,
     subtract_one_day,
 )
 from data_sterilizer.validation.micro import validate_micro
@@ -104,6 +105,30 @@ def test_validate_micro_accepts_negative_culture_with_all_x() -> None:
         row[column] = "x"
     report = validate_micro(_micro_frame([row]))
     assert report.error_count == 0
+
+
+def test_parse_result_id_year_reads_four_digit_suffix() -> None:
+    assert parse_result_id_year("003/2025") == 2025
+    assert parse_result_id_year("29/2026") == 2026
+    assert parse_result_id_year("invalid") is None
+
+
+def test_clean_micro_aligns_date_year_with_result_id() -> None:
+    frame = _micro_frame([
+        _valid_row(
+            result_ID="003/2026",
+            date_result="10.01.2025",
+            date_received="7.01.2025",
+            date_collect="3.01.2025",
+        )
+    ])
+
+    cleaned, report = clean_micro(frame)
+
+    assert cleaned.loc[0, "date_result"] == "10.01.2026"
+    assert cleaned.loc[0, "date_received"] == "7.01.2026"
+    assert cleaned.loc[0, "date_collect"] == "3.01.2026"
+    assert any("result_ID" in correction.message for correction in report.corrections)
 
 
 def test_clean_micro_drops_unnamed_column_and_fills_missing_date_collect() -> None:
