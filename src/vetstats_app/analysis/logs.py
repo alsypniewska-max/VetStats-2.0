@@ -197,6 +197,16 @@ def build_logs_catalog(*source_paths: Path) -> LogsCatalog:
     )
 
 
+def build_detailed_analysis_context_block(
+    context_lines: tuple[str, ...],
+) -> ReportTableBlock:
+    return ReportTableBlock(
+        title="Detailed Analysis — bieżąca konfiguracja",
+        columns=("Ustawienie",),
+        rows=tuple((line,) for line in context_lines),
+    )
+
+
 def format_export_timestamp(when: datetime | None = None) -> str:
     moment = when or datetime.now()
     return moment.strftime("%d.%m.%Y %H:%M:%S")
@@ -207,6 +217,7 @@ def build_logs_section_report(
     *,
     source_labels: tuple[str, ...] = (),
     exported_at: datetime | None = None,
+    context_blocks: tuple[ReportTableBlock, ...] = (),
 ) -> AnalysisSectionReport:
     exported_at_text = format_export_timestamp(exported_at)
     summary = (
@@ -216,21 +227,23 @@ def build_logs_section_report(
     if source_labels:
         summary += f" Źródła plików logów: {', '.join(source_labels)}."
 
+    table_blocks = tuple(context_blocks) + (
+        ReportTableBlock(
+            title="Historia logów",
+            columns=("timestamp", "level", "source", "message"),
+            rows=tuple(
+                (entry.timestamp, entry.level, entry.source, entry.message)
+                for entry in entries
+            ),
+        ),
+    )
+
     return AnalysisSectionReport(
         section_title="Raport logów VetStats 2.0",
         source_labels=source_labels,
         summary_details=summary,
         interpretation_summary="Pełna historia zdarzeń aplikacji VetStats 2.0.",
-        table_blocks=(
-            ReportTableBlock(
-                title="Historia logów",
-                columns=("timestamp", "level", "source", "message"),
-                rows=tuple(
-                    (entry.timestamp, entry.level, entry.source, entry.message)
-                    for entry in entries
-                ),
-            ),
-        ),
+        table_blocks=table_blocks,
     )
 
 
@@ -239,12 +252,18 @@ def write_logs_csv(
     destination: Path,
     *,
     exported_at: datetime | None = None,
+    context_lines: tuple[str, ...] = (),
 ) -> None:
     exported_at_text = format_export_timestamp(exported_at)
     with destination.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.writer(handle, delimiter=CSV_DELIMITER)
         writer.writerow(["Data i godzina eksportu", exported_at_text])
         writer.writerow(["Liczba wpisów", str(len(entries))])
+        if context_lines:
+            writer.writerow([])
+            writer.writerow(["Kontekst — Detailed Analysis"])
+            for line in context_lines:
+                writer.writerow([line])
         writer.writerow([])
         writer.writerow(["timestamp", "level", "source", "message"])
         for entry in entries:

@@ -135,6 +135,31 @@ def format_group_criteria_summary(group: ComparativeGroupDefinition) -> tuple[st
     )
 
 
+def format_detailed_analysis_settings_lines(
+    state: DetailedComparativeState,
+) -> tuple[str, ...]:
+    mode_label = (
+        "porównanie numeryczne"
+        if state.analysis_target.mode == AnalysisMode.NUMERIC
+        else "porównanie kategoryczne"
+    )
+    target_label = format_analysis_target_label(state.analysis_target)
+    lines = [
+        f"Zmienna: {target_label} ({mode_label})",
+        f"{state.group_1.display_name}:",
+    ]
+    lines.extend(format_group_criteria_summary(state.group_1) or ("brak kryteriów",))
+    lines.append(f"{state.group_2.display_name}:")
+    lines.extend(format_group_criteria_summary(state.group_2) or ("brak kryteriów",))
+    return tuple(lines)
+
+
+def format_detailed_analysis_settings_summary(
+    state: DetailedComparativeState,
+) -> str:
+    return " | ".join(format_detailed_analysis_settings_lines(state))
+
+
 def run_detailed_comparative_analysis(
     datasets: dict[str, pd.DataFrame],
     state: DetailedComparativeState,

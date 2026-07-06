@@ -19,7 +19,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(PreviewPage(), "Preview")
         tabs.addTab(analysis_page, "Analysis")
         tabs.addTab(PatientHistorySection(), "Patient History")
-        tabs.addTab(LogsSection(), "Logs")
+        tabs.addTab(LogsSection(detailed_context_provider=analysis_page.detailed_analysis_context), "Logs")
         tabs.addTab(ReportPage(detailed_context_provider=analysis_page.detailed_analysis_context), "Report")
 
         self.setCentralWidget(tabs)

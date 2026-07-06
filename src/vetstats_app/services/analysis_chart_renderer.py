@@ -144,7 +144,7 @@ def _build_figure(
     figure = Figure(figsize=(width_inches, height_inches))
     axis = figure.add_subplot(111)
     _draw_chart(axis, spec, layout_mode="export")
-    if spec.legend_note.strip() or _pre_swab_chart(spec):
+    if _uses_explicit_subplot_margins(spec):
         figure.subplots_adjust(
             bottom=_export_bottom_margin(spec),
             left=_ui_left_margin(spec),
@@ -156,6 +156,18 @@ def _build_figure(
     else:
         figure.set_layout_engine("constrained")
     return figure
+
+
+def _uses_explicit_subplot_margins(spec: AnalysisChartSpec) -> bool:
+    if spec.legend_note.strip() or _pre_swab_chart(spec):
+        return True
+    if spec.x_axis_label.strip():
+        return True
+    if spec.chart_type == "box":
+        return True
+    if _category_labels_are_multiline(spec) or _needs_rotated_labels(spec):
+        return True
+    return False
 
 
 def _legend_line_count(spec: AnalysisChartSpec) -> int:
@@ -428,6 +440,14 @@ def _category_label_rotation(spec: AnalysisChartSpec) -> int:
         if any(len(label) > 12 for label in spec.labels):
             return 45
         return 30
+    if spec.chart_id.startswith(("ulcer_breed_", "breed_treatment_")):
+        if len(spec.labels) > 4 or any(len(label) > 10 for label in spec.labels):
+            return 45
+        return 30
+    if spec.chart_id.startswith("ems_surgery_rate_"):
+        if len(spec.labels) > 2:
+            return 45
+        return 0
     if spec.chart_id == "microbiology_results" or _needs_rotated_labels(spec):
         return 45
     return 30
@@ -479,7 +499,11 @@ def _apply_x_axis_label(axis, spec: AnalysisChartSpec) -> None:
         axis.set_xlabel(spec.x_axis_label)
         axis.xaxis.set_label_coords(0.5, -0.15)
         return
-    axis.set_xlabel(spec.x_axis_label, labelpad=4)
+    rotation = _category_label_rotation(spec)
+    labelpad = 10 if rotation >= 45 else 8
+    if spec.chart_id.startswith("ems_surgery_rate_"):
+        labelpad = 12 if rotation == 0 else 10
+    axis.set_xlabel(spec.x_axis_label, labelpad=labelpad)
 
 
 def _category_axis_bottom_margin(spec: AnalysisChartSpec) -> float:
@@ -501,12 +525,43 @@ def _category_axis_bottom_margin(spec: AnalysisChartSpec) -> float:
             base = max(base, 0.30)
         return base
 
+    rotation = _category_label_rotation(spec)
     max_label_len = max((len(label) for label in spec.labels), default=0)
+    if spec.chart_id.startswith("ulcer_breed_"):
+        base = 0.30
+        if rotation >= 45:
+            base = 0.38
+        if len(spec.labels) > 6:
+            base = max(base, 0.40)
+        if any(" — " in label for label in spec.labels):
+            base = max(base, 0.42)
+        return base
+
+    if spec.chart_id.startswith("ems_surgery_rate_"):
+        if len(spec.labels) <= 2 and rotation == 0:
+            return 0.24
+        if rotation >= 45:
+            return 0.36 if len(spec.labels) <= 6 else 0.40
+        return 0.28
+
+    if spec.chart_type == "box":
+        base = 0.22
+        if rotation >= 45:
+            base = 0.30
+        if len(spec.labels) > 4:
+            base = max(base, 0.32)
+        return base
+
     if len(spec.labels) > 8 or max_label_len > 12:
-        return 0.32
-    if len(spec.labels) > 4:
-        return 0.26
-    return 0.20
+        base = 0.32
+    elif len(spec.labels) > 4:
+        base = 0.26
+    else:
+        base = 0.20
+
+    if spec.x_axis_label.strip():
+        base = max(base, 0.24 if rotation < 45 else 0.30)
+    return base
 
 
 def _draw_chart(
@@ -573,10 +628,8 @@ def _draw_chart(
             boxprops={"facecolor": "#4C78A8", "alpha": 0.65},
             medianprops={"color": "#1F1F1F"},
         )
-        if layout_mode == "ui":
-            _configure_category_axis(axis, spec, layout_mode=layout_mode)
-        else:
-            _configure_category_axis(axis, spec, layout_mode=layout_mode)
+        _configure_category_axis(axis, spec, layout_mode=layout_mode)
+        _autoscale_boxplot_axis(axis, spec)
     elif spec.orientation == "horizontal":
         y_positions = range(len(spec.labels))
         axis.barh(list(y_positions), spec.values, color="#4C78A8")
@@ -615,6 +668,27 @@ def _needs_rotated_labels(spec: AnalysisChartSpec) -> bool:
     if len(spec.labels) > 6:
         return True
     return any(len(label) > 10 for label in spec.labels)
+
+
+def _autoscale_boxplot_axis(axis, spec: AnalysisChartSpec) -> None:
+    all_values = [
+        float(value)
+        for group in spec.box_plot_groups
+        for value in group
+    ]
+    if not all_values:
+        return
+
+    min_value = min(all_values)
+    max_value = max(all_values)
+    span = max_value - min_value
+    padding = span * 0.10 if span > 0 else max(1.0, abs(max_value) * 0.10)
+
+    lower = 0.0 if min_value >= 0 else min_value - padding
+    upper = max_value + padding
+    if upper <= lower:
+        upper = lower + 1.0
+    axis.set_ylim(lower, upper)
 
 
 def _ui_left_margin(spec: AnalysisChartSpec) -> float:

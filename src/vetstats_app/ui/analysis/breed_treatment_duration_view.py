@@ -106,7 +106,7 @@ class BreedTreatmentDurationView(QWidget):
         summary_layout = QVBoxLayout(summary_group)
         summary_layout.addWidget(
             build_wrapped_text_label(
-                "Moduł analizuje czas leczenia uleczonych przypadków wrzodowych "
+                "Moduł analizuje czas leczenia wyleczonych przypadków wrzodowych "
                 "według gatunku i rasy, osobno dla psów i kotów."
             )
         )

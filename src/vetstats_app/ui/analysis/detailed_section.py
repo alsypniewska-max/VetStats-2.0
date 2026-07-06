@@ -29,7 +29,9 @@ from vetstats_app.analysis.detailed_comparative import (
 )
 from vetstats_app.analysis.detailed_comparative_analysis import (
     DetailedComparativeAnalysisResult,
+    format_detailed_analysis_settings_summary,
 )
+from vetstats_app.services.app_event_logger import log_info
 from vetstats_app.services.detailed_comparative_service import DetailedComparativeService
 from vetstats_app.ui.analysis.analysis_button_style import apply_compact_analysis_button_style
 from vetstats_app.ui.analysis.chart_export_dialog import open_chart_export_dialog
@@ -246,6 +248,10 @@ class DetailedAnalysisSection(QWidget):
 
         self._last_result = result
         self._update_export_actions(result)
+        log_info(
+            "detailed_analysis",
+            format_detailed_analysis_settings_summary(self._state),
+        )
 
         populate_detailed_results(
             group_description_box=self._results_group_description,

@@ -429,8 +429,8 @@ def build_summary_details(result: BreedTreatmentDurationResult) -> str:
     exclusions = result.exclusions
     return (
         f"Źródła danych: {result.source_clinical_label}, {result.source_patient_label}. "
-        f"Uwzględniono {exclusions.included_with_known_breed} uleczonych przypadków "
-        f"z znaną rasą (z {exclusions.included_healed_with_duration} uleczonych z "
+        f"Uwzględniono {exclusions.included_with_known_breed} wyleczonych przypadków "
+        f"z znaną rasą (z {exclusions.included_healed_with_duration} wyleczonych z "
         f"obliczonym czasem leczenia). "
         f"Wykluczono m.in. {exclusions.excluded_unknown_species} przypadków z nieznaną "
         f"gatunkiem oraz {exclusions.excluded_unknown_breed} z nieznaną rasą."
@@ -444,13 +444,13 @@ def build_interpretation_summary(result: BreedTreatmentDurationResult) -> str:
     exclusions = result.exclusions
     if exclusions.included_healed_with_duration == 0:
         return (
-            "Brak uleczonych przypadków wrzodowych z obliczalnym czasem leczenia "
+            "Brak wyleczonych przypadków wrzodowych z obliczalnym czasem leczenia "
             "do analizy rasowej."
         )
 
     parts = [
         (
-            f"Po zastosowaniu filtrów uleczonych przypadków (how_ended = good) "
+            f"Po zastosowaniu filtrów wyleczonych przypadków (how_ended = good) "
             f"z obliczonym czasem leczenia pozostało "
             f"{exclusions.included_healed_with_duration} przypadków; "
             f"{exclusions.included_with_known_species} ma znany gatunek, "
@@ -498,13 +498,13 @@ def build_interpretation_summary(result: BreedTreatmentDurationResult) -> str:
     if result.dog_summary and result.dog_breeds:
         top_dog = result.dog_breeds[0]
         parts.append(
-            f"Wśród psów najwięcej uleczonych przypadków dotyczy rasy {top_dog.group_label} "
+            f"Wśród psów najwięcej wyleczonych przypadków dotyczy rasy {top_dog.group_label} "
             f"(n={top_dog.count}, mediana {format_optional_number(top_dog.median_days)} dni)."
         )
     if result.cat_breeds:
         top_cat = result.cat_breeds[0]
         parts.append(
-            f"Wśród kotów najwięcej uleczonych przypadków dotyczy rasy {top_cat.group_label} "
+            f"Wśród kotów najwięcej wyleczonych przypadków dotyczy rasy {top_cat.group_label} "
             f"(n={top_cat.count}, mediana {format_optional_number(top_cat.median_days)} dni)."
         )
 

@@ -44,9 +44,27 @@ from vetstats_app.analysis.ulcer_breed_treatment_duration import (
     UlcerBreedTreatmentDurationResult,
 )
 from vetstats_app.analysis.ems_treatment_duration import (
+    EMS_BOX_CATEGORY_LABELS,
+    EmsDurationValueGroup,
     EmsTreatmentDurationResult,
     FARMACOLOGY_TREATMENT_LABELS,
 )
+
+
+_ALLOWED_EMS_BOX_LABELS = frozenset(EMS_BOX_CATEGORY_LABELS.values())
+
+
+def _ems_boxplot_components(
+    groups: tuple[EmsDurationValueGroup, ...],
+) -> tuple[tuple[str, ...], tuple[tuple[float, ...], ...]]:
+    labels: list[str] = []
+    box_groups: list[tuple[float, ...]] = []
+    for group in groups:
+        if group.group_label not in _ALLOWED_EMS_BOX_LABELS:
+            continue
+        labels.append(group.group_label)
+        box_groups.append(group.duration_days)
+    return tuple(labels), tuple(box_groups)
 
 
 def _yearly_resistance_count(summary: YearlyResistanceSummary, code: str) -> int:
@@ -870,7 +888,7 @@ def build_breed_treatment_duration_charts(
         charts.append(
             AnalysisChartSpec(
                 chart_id="breed_treatment_species_box",
-                title="Czas leczenia uleczonych wrzodów — psy i koty",
+                title="Czas leczenia wyleczonych wrzodów — psy i koty",
                 subtitle="Wykres pudełkowy rozkładu czasu leczenia według gatunku",
                 chart_type="box",
                 labels=tuple(species_labels),
@@ -1050,21 +1068,21 @@ def build_ems_treatment_duration_charts(
     charts: list[AnalysisChartSpec] = []
 
     if result.overall_ems_value_groups:
-        charts.append(
-            AnalysisChartSpec(
-                chart_id="ems_treatment_overall_box",
-                title="Czas leczenia — EMS tak vs EMS nie (łącznie)",
-                subtitle="Wykres pudełkowy dla psów i kotów łącznie",
-                chart_type="box",
-                labels=tuple(group.group_label for group in result.overall_ems_value_groups),
-                values=(),
-                box_plot_groups=tuple(
-                    group.duration_days for group in result.overall_ems_value_groups
-                ),
-                x_axis_label="EMS",
-                y_axis_label="Czas leczenia (dni)",
+        box_labels, box_groups = _ems_boxplot_components(result.overall_ems_value_groups)
+        if box_labels:
+            charts.append(
+                AnalysisChartSpec(
+                    chart_id="ems_treatment_overall_box",
+                    title="Czas leczenia — EMS tak vs EMS nie (łącznie)",
+                    subtitle="Wykres pudełkowy dla psów i kotów łącznie",
+                    chart_type="box",
+                    labels=box_labels,
+                    values=(),
+                    box_plot_groups=box_groups,
+                    x_axis_label="EMS",
+                    y_axis_label="Czas leczenia (dni)",
+                )
             )
-        )
 
     observed_pooled = [
         row
@@ -1088,38 +1106,38 @@ def build_ems_treatment_duration_charts(
         )
 
     if result.dog_ems_value_groups:
-        charts.append(
-            AnalysisChartSpec(
-                chart_id="ems_treatment_dog_overall_box",
-                title="Czas leczenia — EMS tak vs EMS nie (psy)",
-                subtitle="Wykres pudełkowy",
-                chart_type="box",
-                labels=tuple(group.group_label for group in result.dog_ems_value_groups),
-                values=(),
-                box_plot_groups=tuple(
-                    group.duration_days for group in result.dog_ems_value_groups
-                ),
-                x_axis_label="EMS",
-                y_axis_label="Czas leczenia (dni)",
+        box_labels, box_groups = _ems_boxplot_components(result.dog_ems_value_groups)
+        if box_labels:
+            charts.append(
+                AnalysisChartSpec(
+                    chart_id="ems_treatment_dog_overall_box",
+                    title="Czas leczenia — EMS tak vs EMS nie (psy)",
+                    subtitle="Wykres pudełkowy",
+                    chart_type="box",
+                    labels=box_labels,
+                    values=(),
+                    box_plot_groups=box_groups,
+                    x_axis_label="EMS",
+                    y_axis_label="Czas leczenia (dni)",
+                )
             )
-        )
 
     if result.cat_ems_value_groups:
-        charts.append(
-            AnalysisChartSpec(
-                chart_id="ems_treatment_cat_overall_box",
-                title="Czas leczenia — EMS tak vs EMS nie (koty)",
-                subtitle="Wykres pudełkowy",
-                chart_type="box",
-                labels=tuple(group.group_label for group in result.cat_ems_value_groups),
-                values=(),
-                box_plot_groups=tuple(
-                    group.duration_days for group in result.cat_ems_value_groups
-                ),
-                x_axis_label="EMS",
-                y_axis_label="Czas leczenia (dni)",
+        box_labels, box_groups = _ems_boxplot_components(result.cat_ems_value_groups)
+        if box_labels:
+            charts.append(
+                AnalysisChartSpec(
+                    chart_id="ems_treatment_cat_overall_box",
+                    title="Czas leczenia — EMS tak vs EMS nie (koty)",
+                    subtitle="Wykres pudełkowy",
+                    chart_type="box",
+                    labels=box_labels,
+                    values=(),
+                    box_plot_groups=box_groups,
+                    x_axis_label="EMS",
+                    y_axis_label="Czas leczenia (dni)",
+                )
             )
-        )
 
     observed_dog_ulcers = [
         row

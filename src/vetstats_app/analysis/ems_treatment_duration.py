@@ -33,6 +33,11 @@ EMS_LABELS = {
     "no": "EMS nie",
 }
 
+EMS_BOX_CATEGORY_LABELS = {
+    "yes": "tak",
+    "no": "nie",
+}
+
 SPECIES_LABELS = {
     "dog": "Psy",
     "cat": "Koty",
@@ -470,14 +475,14 @@ def _ems_value_groups(
     if len(yes_values) >= MIN_DISPLAY_GROUP_SIZE:
         groups.append(
             EmsDurationValueGroup(
-                group_label=EMS_LABELS["yes"],
+                group_label=EMS_BOX_CATEGORY_LABELS["yes"],
                 duration_days=yes_values,
             )
         )
     if len(no_values) >= MIN_DISPLAY_GROUP_SIZE:
         groups.append(
             EmsDurationValueGroup(
-                group_label=EMS_LABELS["no"],
+                group_label=EMS_BOX_CATEGORY_LABELS["no"],
                 duration_days=no_values,
             )
         )

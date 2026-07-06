@@ -1,24 +1,42 @@
+from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
 
 from PyQt6.QtGui import QShowEvent
-from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QWidget
+from PyQt6.QtWidgets import QFileDialog, QHBoxLayout, QMessageBox, QVBoxLayout, QWidget
 
+from vetstats_app.services.full_report_service import DetailedAnalysisContext
 from vetstats_app.services.logs_service import LogsService
+from vetstats_app.ui.logs.logs_context_panel import LogsContextPanel
 from vetstats_app.ui.logs.logs_detail_panel import LogsDetailPanel
 from vetstats_app.ui.logs.logs_list_panel import LogsListPanel
 
 
 class LogsSection(QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        detailed_context_provider: Callable[[], DetailedAnalysisContext] | None = None,
+    ) -> None:
         super().__init__(parent)
 
-        self._service = LogsService()
+        self._service = LogsService(
+            detailed_context_provider=detailed_context_provider,
+        )
+        self._context_panel = LogsContextPanel()
+        self._context_panel.set_context_provider(detailed_context_provider)
         self._logs_list_panel = LogsListPanel()
         self._logs_detail_panel = LogsDetailPanel()
 
-        layout = QHBoxLayout(self)
-        layout.addWidget(self._logs_list_panel)
-        layout.addWidget(self._logs_detail_panel, stretch=1)
+        body_layout = QHBoxLayout()
+        body_layout.addWidget(self._logs_list_panel)
+        body_layout.addWidget(self._logs_detail_panel, stretch=1)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self._context_panel)
+        layout.addLayout(body_layout, stretch=1)
 
         self._logs_list_panel.connect_current_log_entry_changed(
             self._on_log_entry_selected
@@ -33,6 +51,7 @@ class LogsSection(QWidget):
         self._reload_logs_view(clear_selection=False)
 
     def _reload_logs_view(self, *, clear_selection: bool) -> None:
+        self._context_panel.refresh()
         catalog = self._service.reload_catalog()
         self._logs_list_panel.populate(catalog)
 
